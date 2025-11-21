@@ -69,6 +69,30 @@ export async function getRoom(slug: string) {
   return roomSnap.data() as Room;
 }
 
+export async function getUserRooms(userEmail: string): Promise<Room[]> {
+  const firestore = checkDb();
+  const roomsRef = collection(firestore, "rooms");
+
+  // Get all rooms (security rules allow authenticated users to read)
+  const querySnapshot = await getDocs(roomsRef);
+
+  // Filter rooms where user is creator or in allowedUsers
+  const rooms = querySnapshot.docs
+    .map(doc => ({ slug: doc.id, ...doc.data() } as Room))
+    .filter(room =>
+      room.createdBy === userEmail ||
+      room.allowedUsers.some(u => u.email === userEmail)
+    )
+    .sort((a, b) => {
+      // Sort by creation date, newest first
+      const aTime = a.createdAt?.toMillis() || 0;
+      const bTime = b.createdAt?.toMillis() || 0;
+      return bTime - aTime;
+    });
+
+  return rooms;
+}
+
 export async function updateRoom(slug: string, updates: Partial<Omit<Room, "slug" | "createdAt" | "createdBy">>) {
   const firestore = checkDb();
   const roomRef = doc(firestore, "rooms", slug);

@@ -6,7 +6,7 @@ import { GlassButton } from "@/components/ui/GlassButton";
 import { GlassInput } from "@/components/ui/GlassInput";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { createRoom } from "@/lib/db";
+import { createRoom, getUserRooms, Room } from "@/lib/db";
 import { fetchSpaceMembersList, SpaceMember } from "@/lib/googleChat";
 
 export default function Home() {
@@ -27,6 +27,8 @@ export default function Home() {
   const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
   const [isFetchingMembers, setIsFetchingMembers] = useState(false);
   const [showManualInput, setShowManualInput] = useState(false);
+  const [availableRooms, setAvailableRooms] = useState<Room[]>([]);
+  const [isLoadingRooms, setIsLoadingRooms] = useState(false);
 
   // Get return URL from query params
   useEffect(() => {
@@ -38,6 +40,24 @@ export default function Home() {
       }
     }
   }, []);
+
+  // Fetch available rooms when user is logged in
+  useEffect(() => {
+    if (!loading && user?.email) {
+      setIsLoadingRooms(true);
+      getUserRooms(user.email)
+        .then(rooms => {
+          setAvailableRooms(rooms);
+          setIsLoadingRooms(false);
+        })
+        .catch(error => {
+          console.error("Error fetching rooms:", error);
+          setIsLoadingRooms(false);
+        });
+    } else {
+      setAvailableRooms([]);
+    }
+  }, [user, loading]);
 
   // Redirect to room after login if returnTo is set
   useEffect(() => {
@@ -203,6 +223,48 @@ export default function Home() {
 
               {!isCreating ? (
                 <>
+                  {/* Available Rooms */}
+                  {availableRooms.length > 0 && (
+                    <div className="mb-6">
+                      <h2 className="text-lg font-semibold text-white mb-3">Your Rooms</h2>
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {availableRooms.map(room => (
+                          <GlassCard
+                            key={room.slug}
+                            className="p-4 cursor-pointer hover:bg-white/10 transition-colors"
+                            onClick={() => router.push(`/${room.slug}`)}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1 min-w-0">
+                                <h3 className="font-semibold text-white truncate">{room.name}</h3>
+                                <p className="text-xs text-white/50 mt-1">Room ID: {room.slug}</p>
+                                {room.createdBy === user?.email && (
+                                  <span className="inline-block mt-1 text-xs px-2 py-0.5 bg-blue-500/20 text-blue-200 rounded">
+                                    Creator
+                                  </span>
+                                )}
+                              </div>
+                              <div className="ml-2 text-white/30">
+                                →
+                              </div>
+                            </div>
+                          </GlassCard>
+                        ))}
+                      </div>
+                      <div className="relative flex py-4 items-center mt-4">
+                        <div className="flex-grow border-t border-white/10"></div>
+                        <span className="flex-shrink mx-4 text-white/30 text-xs">OR</span>
+                        <div className="flex-grow border-t border-white/10"></div>
+                      </div>
+                    </div>
+                  )}
+
+                  {isLoadingRooms && (
+                    <div className="mb-6 text-center text-white/50 text-sm">
+                      Loading your rooms...
+                    </div>
+                  )}
+
                   <form onSubmit={handleEnterRoom} className="space-y-4">
                     <GlassInput
                       placeholder="Enter Room Slug"
@@ -214,11 +276,13 @@ export default function Home() {
                     </GlassButton>
                   </form>
 
-                  <div className="relative flex py-2 items-center">
-                    <div className="flex-grow border-t border-white/10"></div>
-                    <span className="flex-shrink mx-4 text-white/30 text-xs">OR</span>
-                    <div className="flex-grow border-t border-white/10"></div>
-                  </div>
+                  {availableRooms.length > 0 && (
+                    <div className="relative flex py-2 items-center">
+                      <div className="flex-grow border-t border-white/10"></div>
+                      <span className="flex-shrink mx-4 text-white/30 text-xs">OR</span>
+                      <div className="flex-grow border-t border-white/10"></div>
+                    </div>
+                  )}
 
                   <GlassButton
                     variant="ghost"
