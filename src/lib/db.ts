@@ -134,10 +134,59 @@ export async function getReviews(roomId: string) {
 export async function updateReviewStatus(reviewId: string, status: "done" | "deleted") {
   const firestore = checkDb();
   const reviewRef = doc(firestore, "reviews", reviewId);
+
+  // Get the review to find its roomId
+  const reviewSnap = await getDoc(reviewRef);
+  if (!reviewSnap.exists()) {
+    throw new Error("Review not found");
+  }
+
+  const review = reviewSnap.data() as Review;
+
   await updateDoc(reviewRef, {
     status,
     updatedAt: serverTimestamp(),
   });
+
+  // If deleting, manage the deleted items queue (max 10 items)
+  if (status === "deleted") {
+    await manageDeletedReviewsQueue(review.roomId);
+  }
+}
+
+/**
+ * Manage deleted reviews queue - keep max 10 deleted items, permanently delete older ones
+ */
+async function manageDeletedReviewsQueue(roomId: string) {
+  const firestore = checkDb();
+  const reviewsRef = collection(firestore, "reviews");
+
+  // Get all deleted reviews for this room, ordered by updatedAt (oldest first)
+  const q = query(
+    reviewsRef,
+    where("roomId", "==", roomId),
+    where("status", "==", "deleted"),
+    orderBy("updatedAt", "asc")
+  );
+
+  const querySnapshot = await getDocs(q);
+  const deletedReviews = querySnapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data()
+  } as Review & { id: string }));
+
+  // If more than 10 deleted items, permanently delete the oldest ones
+  if (deletedReviews.length > 10) {
+    const toDelete = deletedReviews.slice(0, deletedReviews.length - 10);
+
+    // Permanently delete the oldest deleted reviews
+    const deletePromises = toDelete.map(review => {
+      const reviewRef = doc(firestore, "reviews", review.id);
+      return deleteDoc(reviewRef);
+    });
+
+    await Promise.all(deletePromises);
+  }
 }
 
 export async function markReviewAsUpdated(reviewId: string) {

@@ -148,10 +148,17 @@ export default function RoomPage() {
 
   // Filter Reviews
   const now = new Date();
+  const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
   const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-  const createdLast24h = reviews.filter(r => r.createdAt?.toDate() > oneDayAgo);
-  const updatedLast24h = reviews.filter(r => r.updatedAt?.toDate() > oneDayAgo);
+  const createdMoreThan3Days = reviews.filter(r => {
+    const createdAt = r.createdAt?.toDate();
+    return createdAt && createdAt <= threeDaysAgo;
+  });
+  const updatedMoreThan1Day = reviews.filter(r => {
+    const updatedAt = r.updatedAt?.toDate();
+    return updatedAt && updatedAt <= oneDayAgo;
+  });
 
   return (
     <main className="min-h-screen p-3 md:p-8 pb-24">
@@ -185,15 +192,15 @@ export default function RoomPage() {
         <AddReviewForm room={room} />
 
         <div className="space-y-6 md:space-y-8">
-          {createdLast24h.length > 0 && (
+          {createdMoreThan3Days.length > 0 && (
             <section>
               <button
                 onClick={() => setIsCreatedSectionExpanded(!isCreatedSectionExpanded)}
                 className="w-full flex items-center justify-between text-left mb-3 md:mb-4 pl-2 border-l-4 border-green-400 hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors"
               >
                 <h2 className="text-lg md:text-xl font-semibold text-white">
-                  Pending review more than 1 day all time
-                  <span className="text-sm font-normal text-white/50 ml-2">({createdLast24h.length})</span>
+                  Pending review more than 3 days created
+                  <span className="text-sm font-normal text-white/50 ml-2">({createdMoreThan3Days.length})</span>
                 </h2>
                 {isCreatedSectionExpanded ? (
                   <ChevronUpIcon className="w-5 h-5 text-white/50 shrink-0 ml-2" />
@@ -204,7 +211,7 @@ export default function RoomPage() {
               <div className={`transition-all duration-300 ease-in-out ${
                 isCreatedSectionExpanded ? 'max-h-[10000px] opacity-100' : 'max-h-0 overflow-hidden opacity-0'
               }`}>
-                {createdLast24h.map(review => (
+                {createdMoreThan3Days.map(review => (
                   <ReviewItem
                     key={review.id}
                     review={review}
@@ -219,7 +226,7 @@ export default function RoomPage() {
             </section>
           )}
 
-          {updatedLast24h.length > 0 && (
+          {updatedMoreThan1Day.length > 0 && (
             <section>
               <button
                 onClick={() => setIsUpdatedSectionExpanded(!isUpdatedSectionExpanded)}
@@ -227,7 +234,7 @@ export default function RoomPage() {
               >
                 <h2 className="text-lg md:text-xl font-semibold text-white">
                   Pending review more than 1 day since last updated
-                  <span className="text-sm font-normal text-white/50 ml-2">({updatedLast24h.length})</span>
+                  <span className="text-sm font-normal text-white/50 ml-2">({updatedMoreThan1Day.length})</span>
                 </h2>
                 {isUpdatedSectionExpanded ? (
                   <ChevronUpIcon className="w-5 h-5 text-white/50 shrink-0 ml-2" />
@@ -238,7 +245,7 @@ export default function RoomPage() {
               <div className={`transition-all duration-300 ease-in-out ${
                 isUpdatedSectionExpanded ? 'max-h-[10000px] opacity-100' : 'max-h-0 overflow-hidden opacity-0'
               }`}>
-                {updatedLast24h.map(review => (
+                {updatedMoreThan1Day.map(review => (
                   <ReviewItem
                     key={review.id}
                     review={review}
@@ -247,6 +254,7 @@ export default function RoomPage() {
                     webhookUrl={room.webhookUrl}
                     allowedUsers={room.allowedUsers}
                     isInRoom={room.allowedUsers.some(u => u.email === user?.email) || room.createdBy === user?.email}
+                    showUpdatedTime={true}
                   />
                 ))}
               </div>

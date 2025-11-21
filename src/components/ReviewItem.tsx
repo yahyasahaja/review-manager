@@ -5,7 +5,7 @@ import { GlassButton } from "./ui/GlassButton";
 import { useAuth } from "@/context/AuthContext";
 import { CheckCircleIcon, TrashIcon, BellIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
 import { sendGoogleChatNotification, formatMentions } from "@/lib/googleChat";
-import { getRoomUrl } from "@/lib/utils";
+import { getRoomUrl, formatRelativeTime } from "@/lib/utils";
 
 interface ReviewItemProps {
   review: Review;
@@ -14,9 +14,10 @@ interface ReviewItemProps {
   webhookUrl?: string;
   allowedUsers?: { email: string; googleChatUserId?: string }[];
   isInRoom: boolean; // Whether user is in the room (can delete)
+  showUpdatedTime?: boolean; // If true, show time since last update instead of creation
 }
 
-export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUsers = [], isInRoom }: ReviewItemProps) {
+export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUsers = [], isInRoom, showUpdatedTime = false }: ReviewItemProps) {
   const { user, getAccessToken } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
   const [isActionsExpanded, setIsActionsExpanded] = useState(false);
@@ -90,6 +91,17 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
   const myStatus = review.assignees.find(a => a.email === userEmail)?.status;
   const isReviewer = isAssigned && myStatus === 'pending';
 
+  // Check if review is more than 1 day old (based on creation or update time)
+  const timeToCheck = showUpdatedTime ? review.updatedAt : review.createdAt;
+  const isOldReview = timeToCheck ? (() => {
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    return timeToCheck.toDate() <= oneDayAgo;
+  })() : false;
+
+  // Get the time to display
+  const displayTime = showUpdatedTime ? review.updatedAt : review.createdAt;
+
   const handleCardClick = (e: React.MouseEvent) => {
     // Don't toggle if clicking on the link or action buttons
     const target = e.target as HTMLElement;
@@ -109,13 +121,28 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
 
   return (
     <GlassCard
-      className="mb-3 md:mb-4 relative overflow-hidden cursor-pointer select-none"
+      className={`mb-3 md:mb-4 relative overflow-hidden cursor-pointer select-none transition-all duration-300 ${
+        isOldReview
+          ? 'border-l-4 border-l-orange-400/60 bg-gradient-to-r from-orange-500/10 via-orange-500/5 to-transparent shadow-lg shadow-orange-500/5 before:absolute before:inset-0 before:bg-gradient-to-r before:from-orange-400/5 before:via-transparent before:to-transparent before:pointer-events-none'
+          : ''
+      }`}
       onClick={handleCardClick}
     >
       <div className="flex flex-col gap-2 md:gap-3">
         <div className="flex justify-between items-start gap-2">
           <div className="flex-1 min-w-0 pr-2">
-            <h3 className="text-base md:text-lg font-bold mb-1 break-words">{review.title}</h3>
+            <div className="flex items-start justify-between gap-2 mb-1">
+              <h3 className="text-base md:text-lg font-bold break-words flex-1">{review.title}</h3>
+              {displayTime && (
+                <span className={`text-xs whitespace-nowrap shrink-0 px-2 py-1 rounded-full backdrop-blur-sm transition-all ${
+                  isOldReview
+                    ? 'bg-orange-500/20 border border-orange-400/40 text-orange-200 shadow-lg shadow-orange-500/10'
+                    : 'text-white/50'
+                }`}>
+                  {formatRelativeTime(displayTime.toDate())}
+                </span>
+              )}
+            </div>
             <a
               href={review.link}
               target="_blank"
