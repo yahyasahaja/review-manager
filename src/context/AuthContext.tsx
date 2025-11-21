@@ -54,8 +54,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Store in sessionStorage for API calls
         sessionStorage.setItem('google_access_token', credential.accessToken);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error signing in with Google", error);
+
+      // Provide user-friendly error messages
+      if (error?.code === 'auth/popup-closed-by-user') {
+        // User closed the popup, no need to show error
+        return;
+      } else if (error?.code === 'auth/unauthorized-domain') {
+        alert(
+          "Authentication error: This domain is not authorized.\n\n" +
+          "Please add the following to your OAuth client in Google Cloud Console:\n" +
+          "1. Authorized JavaScript origins: https://review-queue.netlify.app\n" +
+          "2. Authorized redirect URIs: https://review-queue.netlify.app/__/auth/handler\n\n" +
+          "Also add it to Firebase Console > Authentication > Settings > Authorized domains."
+        );
+      } else if (error?.code === 'auth/popup-blocked') {
+        alert("Popup was blocked by your browser. Please allow popups for this site and try again.");
+      } else {
+        alert("Error signing in: " + (error?.message || "Unknown error. Please check the console for details."));
+      }
     }
   };
 

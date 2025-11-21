@@ -26,11 +26,14 @@ export default function RoomPage() {
   const [isCreatedSectionExpanded, setIsCreatedSectionExpanded] = useState(true);
   const [isUpdatedSectionExpanded, setIsUpdatedSectionExpanded] = useState(true);
   const [isAllSectionExpanded, setIsAllSectionExpanded] = useState(true);
+  const [isCheckingAccess, setIsCheckingAccess] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
+
+    // If not logged in, redirect to home with return URL
     if (!user) {
-      router.push("/");
+      router.push(`/?returnTo=${encodeURIComponent(slug)}`);
       return;
     }
 
@@ -88,8 +91,59 @@ export default function RoomPage() {
     fetchRoom();
   }, [slug, user, authLoading, router]);
 
-  if (loading || authLoading) return <div className="flex h-screen items-center justify-center text-white">Loading...</div>;
-  if (error) return <div className="flex h-screen items-center justify-center text-red-400">{error}</div>;
+  if (loading || authLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center text-white">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p>Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show errors (including unauthorized access)
+  if (error) {
+    const isUnauthorized = error.includes("not allowed") || error.includes("unauthorized");
+    return (
+      <div className="flex h-screen items-center justify-center p-4">
+        <GlassCard className="max-w-md w-full">
+          <div className="text-center">
+            <div className="text-6xl mb-4">{isUnauthorized ? "🚫" : "⚠️"}</div>
+            <h1 className="text-2xl font-bold text-white mb-2">
+              {isUnauthorized ? "Access Denied" : "Error"}
+            </h1>
+            <p className="text-white/70 mb-6">
+              {error}
+              {isUnauthorized && (
+                <span className="block mt-2 text-sm">
+                  Please contact the room creator to be added to the allowed users list.
+                </span>
+              )}
+            </p>
+            <div className="space-y-3">
+              <GlassButton
+                onClick={() => router.push('/')}
+                className="w-full"
+              >
+                Go to Home
+              </GlassButton>
+              {isUnauthorized && (
+                <GlassButton
+                  variant="ghost"
+                  onClick={() => router.back()}
+                  className="w-full"
+                >
+                  Go Back
+                </GlassButton>
+              )}
+            </div>
+          </div>
+        </GlassCard>
+      </div>
+    );
+  }
+
   if (!room) return null;
 
   // Filter Reviews

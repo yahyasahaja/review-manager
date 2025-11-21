@@ -14,6 +14,9 @@ export default function Home() {
   const [roomSlug, setRoomSlug] = useState("");
   const router = useRouter();
 
+  // Check for return URL from room page
+  const [returnTo, setReturnTo] = useState<string | null>(null);
+
   // Create Room State
   const [isCreating, setIsCreating] = useState(false);
   const [newRoomSlug, setNewRoomSlug] = useState("");
@@ -24,6 +27,27 @@ export default function Home() {
   const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
   const [isFetchingMembers, setIsFetchingMembers] = useState(false);
   const [showManualInput, setShowManualInput] = useState(false);
+
+  // Get return URL from query params
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const returnToParam = params.get('returnTo');
+      if (returnToParam) {
+        setReturnTo(returnToParam);
+      }
+    }
+  }, []);
+
+  // Redirect to room after login if returnTo is set
+  useEffect(() => {
+    if (!loading && user && returnTo) {
+      // Small delay to ensure auth state is fully updated
+      setTimeout(() => {
+        router.push(`/${returnTo}`);
+      }, 100);
+    }
+  }, [user, loading, returnTo, router]);
 
   const handleEnterRoom = (e: React.FormEvent) => {
     e.preventDefault();
@@ -135,7 +159,16 @@ export default function Home() {
     }
   };
 
-  if (loading) return <div className="flex h-screen items-center justify-center text-white">Loading...</div>;
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center text-white">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p>Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-4 md:p-24">
@@ -148,6 +181,13 @@ export default function Home() {
           {!user ? (
             <div className="space-y-4">
               <p className="text-lg mb-6">Manage your code reviews with style.</p>
+              {returnTo && (
+                <div className="mb-4 p-4 bg-blue-500/20 border border-blue-500/30 rounded-lg">
+                  <p className="text-sm text-blue-200 text-center">
+                    Please sign in to access the room
+                  </p>
+                </div>
+              )}
               <GlassButton onClick={signInWithGoogle} className="w-full">
                 Sign in with Google
               </GlassButton>

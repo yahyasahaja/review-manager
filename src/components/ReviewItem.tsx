@@ -5,6 +5,7 @@ import { GlassButton } from "./ui/GlassButton";
 import { useAuth } from "@/context/AuthContext";
 import { CheckCircleIcon, TrashIcon, BellIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
 import { sendGoogleChatNotification, formatMentions } from "@/lib/googleChat";
+import { getRoomUrl } from "@/lib/utils";
 
 interface ReviewItemProps {
   review: Review;
@@ -31,9 +32,10 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
     if (webhookUrl) {
       const accessToken = await getAccessToken();
       const mentions = await formatMentions(review.mentions, allowedUsers, webhookUrl, accessToken);
+      const roomUrl = getRoomUrl(review.roomId);
       await sendGoogleChatNotification(
         webhookUrl,
-        `✅ Review Done: ${review.title}\n${mentions ? `CC: ${mentions}` : ''}`
+        `✅ Review Done: ${review.title}\n${review.link}\n${mentions ? `CC: ${mentions}` : ''}\n\n📋 View in Review Queue: ${roomUrl}`
       );
     }
   };
@@ -56,9 +58,10 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
       // Notify only those who reviewed it
       const reviewerEmails = reviewers.map(r => r.email);
       const mentions = await formatMentions(reviewerEmails, allowedUsers, webhookUrl, accessToken);
+      const roomUrl = getRoomUrl(review.roomId);
       await sendGoogleChatNotification(
         webhookUrl,
-        `🔄 Review Updated: ${review.title}\n${review.link}\n${mentions ? `CC: ${mentions}` : ''}`
+        `🔄 Review Updated: ${review.title}\n${review.link}\n${mentions ? `CC: ${mentions}` : ''}\n\n📋 View in Review Queue: ${roomUrl}`
       );
     }
   };
@@ -67,9 +70,10 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
     if (webhookUrl) {
       const accessToken = await getAccessToken();
       const mentions = await formatMentions(review.mentions, allowedUsers, webhookUrl, accessToken);
+      const roomUrl = getRoomUrl(review.roomId);
       await sendGoogleChatNotification(
         webhookUrl,
-        `🔔 Ping: ${review.title}\n${review.link}\n${mentions ? `CC: ${mentions}` : ''}`
+        `🔔 Ping: ${review.title}\n${review.link}\n${mentions ? `CC: ${mentions}` : ''}\n\n📋 View in Review Queue: ${roomUrl}`
       );
       alert("Ping sent to Google Chat!");
     } else {

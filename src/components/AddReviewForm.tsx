@@ -6,6 +6,7 @@ import { GlassButton } from "./ui/GlassButton";
 import { addReview, Room } from "@/lib/db";
 import { useAuth } from "@/context/AuthContext";
 import { sendGoogleChatNotification, formatMentions } from "@/lib/googleChat";
+import { getRoomUrl } from "@/lib/utils";
 
 interface AddReviewFormProps {
   room: Room;
@@ -39,9 +40,10 @@ export function AddReviewForm({ room, onSuccess }: AddReviewFormProps) {
     if (room.webhookUrl) {
       const accessToken = await getAccessToken();
       const mentionText = await formatMentions(mentions, room.allowedUsers, room.webhookUrl, accessToken);
+      const roomUrl = getRoomUrl(room.slug);
       await sendGoogleChatNotification(
         room.webhookUrl,
-        `🆕 New Review: ${title}\n${link}\n${mentionText ? `CC: ${mentionText}` : ''}`
+        `🆕 New Review: ${title}\n${link}\n${mentionText ? `CC: ${mentionText}` : ''}\n\n📋 View in Review Queue: ${roomUrl}`
       );
     }
 
