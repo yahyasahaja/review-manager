@@ -1,0 +1,241 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import { getRoom, Room, Review } from "@/lib/db";
+import { db } from "@/lib/firebase";
+import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
+import { GlassCard } from "@/components/ui/GlassCard";
+import { GlassButton } from "@/components/ui/GlassButton";
+import { AddReviewForm } from "@/components/AddReviewForm";
+import { ReviewItem } from "@/components/ReviewItem";
+import { RoomSettings } from "@/components/RoomSettings";
+import { ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
+
+export default function RoomPage() {
+  const params = useParams();
+  const slug = params.slug as string;
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
+
+  const [room, setRoom] = useState<Room | null>(null);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [isCreatedSectionExpanded, setIsCreatedSectionExpanded] = useState(true);
+  const [isUpdatedSectionExpanded, setIsUpdatedSectionExpanded] = useState(true);
+  const [isAllSectionExpanded, setIsAllSectionExpanded] = useState(true);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      router.push("/");
+      return;
+    }
+
+    const fetchRoom = async () => {
+      try {
+        const roomData = await getRoom(slug);
+        if (!roomData) {
+          setError("Room not found");
+          setLoading(false);
+          return;
+        }
+
+        // Check access
+        const isAllowed = roomData.allowedUsers.some(u => u.email === user.email) || roomData.createdBy === user.email;
+        if (!isAllowed) {
+          setError("You are not allowed in this room");
+          setLoading(false);
+          return;
+        }
+
+        setRoom(roomData);
+        setLoading(false);
+
+        if (!db) {
+          setError("Database not initialized");
+          setLoading(false);
+          return;
+        }
+
+        // Subscribe to reviews
+        const reviewsRef = collection(db, "reviews");
+        const q = query(
+          reviewsRef,
+          where("roomId", "==", slug),
+          where("status", "==", "active"),
+          orderBy("createdAt", "desc")
+        );
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+          const reviewsData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          } as Review));
+          setReviews(reviewsData);
+        });
+
+        return () => unsubscribe();
+      } catch (err) {
+        console.error(err);
+        setError("Error loading room");
+        setLoading(false);
+      }
+    };
+
+    fetchRoom();
+  }, [slug, user, authLoading, router]);
+
+  if (loading || authLoading) return <div className="flex h-screen items-center justify-center text-white">Loading...</div>;
+  if (error) return <div className="flex h-screen items-center justify-center text-red-400">{error}</div>;
+  if (!room) return null;
+
+  // Filter Reviews
+  const now = new Date();
+  const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+  const createdLast24h = reviews.filter(r => r.createdAt?.toDate() > oneDayAgo);
+  const updatedLast24h = reviews.filter(r => r.updatedAt?.toDate() > oneDayAgo);
+
+  return (
+    <main className="min-h-screen p-3 md:p-8 pb-24">
+      <div className="max-w-4xl mx-auto">
+        <header className="mb-4 md:mb-8">
+          <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-3 md:gap-4">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-2xl md:text-3xl font-bold text-white mb-1 md:mb-2 break-words">{room.name}</h1>
+              <p className="text-white/50 text-xs md:text-sm break-all">Room ID: {room.slug}</p>
+            </div>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
+              <span className="text-xs md:text-sm text-white/70 break-all">{user?.email}</span>
+              <GlassButton
+                variant="ghost"
+                onClick={() => router.push('/')}
+                className="px-3! py-2! text-xs md:text-sm"
+              >
+                Exit Room
+              </GlassButton>
+            </div>
+          </div>
+        </header>
+
+        <RoomSettings room={room} onUpdate={async () => {
+          const updatedRoom = await getRoom(slug);
+          if (updatedRoom) {
+            setRoom(updatedRoom);
+          }
+        }} />
+
+        <AddReviewForm room={room} />
+
+        <div className="space-y-6 md:space-y-8">
+          {createdLast24h.length > 0 && (
+            <section>
+              <button
+                onClick={() => setIsCreatedSectionExpanded(!isCreatedSectionExpanded)}
+                className="w-full flex items-center justify-between text-left mb-3 md:mb-4 pl-2 border-l-4 border-green-400 hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors"
+              >
+                <h2 className="text-lg md:text-xl font-semibold text-white">
+                  Pending review more than 1 day all time
+                  <span className="text-sm font-normal text-white/50 ml-2">({createdLast24h.length})</span>
+                </h2>
+                {isCreatedSectionExpanded ? (
+                  <ChevronUpIcon className="w-5 h-5 text-white/50 shrink-0 ml-2" />
+                ) : (
+                  <ChevronDownIcon className="w-5 h-5 text-white/50 shrink-0 ml-2" />
+                )}
+              </button>
+              <div className={`transition-all duration-300 ease-in-out ${
+                isCreatedSectionExpanded ? 'max-h-[10000px] opacity-100' : 'max-h-0 overflow-hidden opacity-0'
+              }`}>
+                {createdLast24h.map(review => (
+                  <ReviewItem
+                    key={review.id}
+                    review={review}
+                    isOwner={review.createdBy === user?.email}
+                    userEmail={user?.email || ""}
+                    webhookUrl={room.webhookUrl}
+                    allowedUsers={room.allowedUsers}
+                    isInRoom={room.allowedUsers.some(u => u.email === user?.email) || room.createdBy === user?.email}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {updatedLast24h.length > 0 && (
+            <section>
+              <button
+                onClick={() => setIsUpdatedSectionExpanded(!isUpdatedSectionExpanded)}
+                className="w-full flex items-center justify-between text-left mb-3 md:mb-4 pl-2 border-l-4 border-blue-400 hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors"
+              >
+                <h2 className="text-lg md:text-xl font-semibold text-white">
+                  Pending review more than 1 day since last updated
+                  <span className="text-sm font-normal text-white/50 ml-2">({updatedLast24h.length})</span>
+                </h2>
+                {isUpdatedSectionExpanded ? (
+                  <ChevronUpIcon className="w-5 h-5 text-white/50 shrink-0 ml-2" />
+                ) : (
+                  <ChevronDownIcon className="w-5 h-5 text-white/50 shrink-0 ml-2" />
+                )}
+              </button>
+              <div className={`transition-all duration-300 ease-in-out ${
+                isUpdatedSectionExpanded ? 'max-h-[10000px] opacity-100' : 'max-h-0 overflow-hidden opacity-0'
+              }`}>
+                {updatedLast24h.map(review => (
+                  <ReviewItem
+                    key={review.id}
+                    review={review}
+                    isOwner={review.createdBy === user?.email}
+                    userEmail={user?.email || ""}
+                    webhookUrl={room.webhookUrl}
+                    allowedUsers={room.allowedUsers}
+                    isInRoom={room.allowedUsers.some(u => u.email === user?.email) || room.createdBy === user?.email}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section>
+            <button
+              onClick={() => setIsAllSectionExpanded(!isAllSectionExpanded)}
+              className="w-full flex items-center justify-between text-left mb-3 md:mb-4 pl-2 border-l-4 border-white/20 hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors"
+            >
+              <h2 className="text-lg md:text-xl font-semibold text-white">
+                All Active Reviews
+                <span className="text-sm font-normal text-white/50 ml-2">({reviews.length})</span>
+              </h2>
+              {isAllSectionExpanded ? (
+                <ChevronUpIcon className="w-5 h-5 text-white/50 shrink-0 ml-2" />
+              ) : (
+                <ChevronDownIcon className="w-5 h-5 text-white/50 shrink-0 ml-2" />
+              )}
+            </button>
+            <div className={`transition-all duration-300 ease-in-out ${
+              isAllSectionExpanded ? 'max-h-[10000px] opacity-100' : 'max-h-0 overflow-hidden opacity-0'
+            }`}>
+              {reviews.length === 0 ? (
+                <p className="text-white/50 italic">No active reviews.</p>
+              ) : (
+                reviews.map(review => (
+                  <ReviewItem
+                    key={review.id}
+                    review={review}
+                    isOwner={review.createdBy === user?.email}
+                    userEmail={user?.email || ""}
+                    webhookUrl={room.webhookUrl}
+                    allowedUsers={room.allowedUsers}
+                    isInRoom={room.allowedUsers.some(u => u.email === user?.email) || room.createdBy === user?.email}
+                  />
+                ))
+              )}
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  );
+}

@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to get user email
+    function getUserEmail() {
+      return request.auth.token.email;
+    }
+
+    // Rooms collection
+    match /rooms/{roomId} {
+      // Allow authenticated users to create rooms (must be the creator)
+      allow create: if isAuthenticated() &&
+                       request.resource.data.createdBy == getUserEmail();
+
+      // Allow read if user is authenticated
+      // Application code will check if user is in allowedUsers
+      allow read: if isAuthenticated();
+
+      // Allow update if user is creator
+      allow update: if isAuthenticated() &&
+                       resource.data.createdBy == getUserEmail();
+
+      // Allow delete if user is creator
+      allow delete: if isAuthenticated() &&
+                       resource.data.createdBy == getUserEmail();
+    }
+
+    // Reviews collection
+    match /reviews/{reviewId} {
+      // Allow create if user is authenticated
+      allow create: if isAuthenticated() &&
+                       request.resource.data.createdBy == getUserEmail();
+
+      // Allow read if user is authenticated
+      // Application code will filter by room access
+      allow read: if isAuthenticated();
+
+      // Allow update if user is authenticated
+      // Application code will check if user is creator or assignee
+      allow update: if isAuthenticated();
+
+      // Allow delete if user is creator
+      allow delete: if isAuthenticated() &&
+                       resource.data.createdBy == getUserEmail();
+    }
+  }
+}
