@@ -51,10 +51,11 @@ function SendSummaryButton({ reviews, room, getAccessToken }: { reviews: Review[
         }
       }}
       isLoading={isLoading}
-      className="w-full flex items-center justify-center gap-2"
+      className="w-full flex items-center justify-center gap-2 px-4! py-2.5! text-sm md:text-base"
     >
-      <DocumentTextIcon className="w-5 h-5" />
-      Send Review List Summary to Chat
+      <DocumentTextIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" />
+      <span className="hidden sm:inline">Send Review List Summary to Chat</span>
+      <span className="sm:hidden">Send Summary</span>
     </GlassButton>
   );
 }

@@ -86,46 +86,86 @@ body {
     content: '';
     position: absolute;
     top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
     background: linear-gradient(
-      135deg,
-      rgba(255, 255, 255, 0.15) 0%,
-      transparent 50%,
-      rgba(255, 255, 255, 0.1) 100%
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.5) 50%,
+      transparent 100%
     );
-    opacity: 0.6;
+    opacity: 0;
+    transition: left 0.15s ease-out, opacity 0.15s ease-out;
     pointer-events: none;
   }
 
-  .liquid-glass-button:hover::before {
-    opacity: 0.6;
-    transform: translate(25%, 25%);
+  /* Mobile: Use hover state as default */
+  @media (hover: none) and (pointer: coarse) {
+    .liquid-glass-button {
+      background: linear-gradient(
+        135deg,
+        rgba(255, 255, 255, 0.25) 0%,
+        rgba(255, 255, 255, 0.15) 50%,
+        rgba(255, 255, 255, 0.2) 100%
+      );
+      border-color: rgba(255, 255, 255, 0.35);
+      box-shadow:
+        0 12px 48px 0 rgba(0, 0, 0, 0.35),
+        inset 0 1px 1px 0 rgba(255, 255, 255, 0.5),
+        inset 0 -1px 1px 0 rgba(0, 0, 0, 0.2),
+        0 0 0 1px rgba(255, 255, 255, 0.15) inset;
+    }
+
+    .liquid-glass-button::before {
+      opacity: 0.6;
+      transform: translate(25%, 25%);
+    }
   }
 
-  .liquid-glass-button:hover {
-    background: linear-gradient(
-      135deg,
-      rgba(255, 255, 255, 0.25) 0%,
-      rgba(255, 255, 255, 0.15) 50%,
-      rgba(255, 255, 255, 0.2) 100%
-    );
-    border-color: rgba(255, 255, 255, 0.35);
-    box-shadow:
-      0 12px 48px 0 rgba(0, 0, 0, 0.35),
-      inset 0 1px 1px 0 rgba(255, 255, 255, 0.5),
-      inset 0 -1px 1px 0 rgba(0, 0, 0, 0.2),
-      0 0 0 1px rgba(255, 255, 255, 0.15) inset;
-    transform: translateY(-1px);
+  /* Desktop: Hover effects */
+  @media (hover: hover) {
+    .liquid-glass-button:hover::before {
+      opacity: 0.6;
+      transform: translate(25%, 25%);
+    }
+
+    .liquid-glass-button:hover {
+      background: linear-gradient(
+        135deg,
+        rgba(255, 255, 255, 0.25) 0%,
+        rgba(255, 255, 255, 0.15) 50%,
+        rgba(255, 255, 255, 0.2) 100%
+      );
+      border-color: rgba(255, 255, 255, 0.35);
+      box-shadow:
+        0 12px 48px 0 rgba(0, 0, 0, 0.35),
+        inset 0 1px 1px 0 rgba(255, 255, 255, 0.5),
+        inset 0 -1px 1px 0 rgba(0, 0, 0, 0.2),
+        0 0 0 1px rgba(255, 255, 255, 0.15) inset;
+      transform: translateY(-1px);
+    }
   }
 
+  /* Active/Tap: Shining glass effect with zoom out */
   .liquid-glass-button:active {
-    transform: scale(0.97) translateY(0);
+    transform: scale(1.03) translateY(0);
     box-shadow:
       0 4px 20px 0 rgba(0, 0, 0, 0.3),
       inset 0 1px 1px 0 rgba(255, 255, 255, 0.3),
-      inset 0 -1px 1px 0 rgba(0, 0, 0, 0.2);
+      inset 0 -1px 1px 0 rgba(0, 0, 0, 0.2),
+      0 0 20px 0 rgba(255, 255, 255, 0.3);
+    transition: transform 0.1s ease-out, box-shadow 0.1s ease-out;
+  }
+
+  .liquid-glass-button:active::after {
+    left: 100%;
+    opacity: 1;
+    transition: left 0.15s ease-out, opacity 0.15s ease-out;
+  }
+
+  .liquid-glass-button:not(:active) {
+    transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
   }
 
   .liquid-glass-button:disabled {
