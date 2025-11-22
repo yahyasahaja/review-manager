@@ -11,12 +11,58 @@ import { GlassButton } from "@/components/ui/GlassButton";
 import { AddReviewForm } from "@/components/AddReviewForm";
 import { ReviewItem } from "@/components/ReviewItem";
 import { RoomSettings } from "@/components/RoomSettings";
-import { ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
+import { ChevronDownIcon, ChevronUpIcon, DocumentTextIcon } from "@heroicons/react/24/outline";
+import { sendGoogleChatNotification, formatMentions } from "@/lib/googleChat";
+import { getRoomUrl, generateReviewSummary } from "@/lib/utils";
+
+function SendSummaryButton({ reviews, room, getAccessToken }: { reviews: Review[]; room: Room; getAccessToken: () => Promise<string | null> }) {
+  const [isLoading, setIsLoading] = useState(false);
+
+  return (
+    <GlassButton
+      onClick={async () => {
+        if (isLoading) return; // Idempotent check
+        setIsLoading(true);
+        try {
+          const accessToken = await getAccessToken();
+          const roomUrl = getRoomUrl(room.slug);
+
+          // Format mentions for each review's assignees
+          const reviewMentionsMap = new Map<string, string>();
+          for (const review of reviews) {
+            if (review.assignees.length > 0) {
+              const assigneeEmails = review.assignees.map(a => a.email);
+              const mentions = await formatMentions(assigneeEmails, room.allowedUsers, room.webhookUrl, accessToken);
+              if (mentions) {
+                reviewMentionsMap.set(review.id, mentions);
+              }
+            }
+          }
+
+          const summary = generateReviewSummary(reviews, roomUrl, reviewMentionsMap);
+
+          await sendGoogleChatNotification(room.webhookUrl, summary);
+          alert("Review summary sent to Google Chat!");
+        } catch (error) {
+          console.error("Error sending summary:", error);
+          alert("Error sending summary to Google Chat");
+        } finally {
+          setIsLoading(false);
+        }
+      }}
+      isLoading={isLoading}
+      className="w-full flex items-center justify-center gap-2"
+    >
+      <DocumentTextIcon className="w-5 h-5" />
+      Send Review List Summary to Chat
+    </GlassButton>
+  );
+}
 
 export default function RoomPage() {
   const params = useParams();
   const slug = params.slug as string;
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, getAccessToken } = useAuth();
   const router = useRouter();
 
   const [room, setRoom] = useState<Room | null>(null);
@@ -190,6 +236,17 @@ export default function RoomPage() {
         }} />
 
         <AddReviewForm room={room} />
+
+        {/* Send Summary Button */}
+        {room.webhookUrl && reviews.length > 0 && (
+          <GlassCard className="mb-6">
+            <SendSummaryButton
+              reviews={reviews}
+              room={room}
+              getAccessToken={getAccessToken}
+            />
+          </GlassCard>
+        )}
 
         <div className="space-y-6 md:space-y-8">
           {createdMoreThan3Days.length > 0 && (

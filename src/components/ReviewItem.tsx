@@ -5,7 +5,7 @@ import { GlassButton } from "./ui/GlassButton";
 import { useAuth } from "@/context/AuthContext";
 import { CheckCircleIcon, TrashIcon, BellIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
 import { sendGoogleChatNotification, formatMentions } from "@/lib/googleChat";
-import { getRoomUrl, formatRelativeTime } from "@/lib/utils";
+import { getRoomUrl, formatRelativeTime, formatDetailedTime, formatTimeSince, formatExactDateTime } from "@/lib/utils";
 
 interface ReviewItemProps {
   review: Review;
@@ -21,70 +21,151 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
   const { user, getAccessToken } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
   const [isActionsExpanded, setIsActionsExpanded] = useState(false);
+  const [isLoading, setIsLoading] = useState({
+    markDone: false,
+    markUpdated: false,
+    ping: false,
+    markReviewed: false,
+    delete: false,
+  });
 
   // Get list of reviewers (assignees who marked as reviewed)
   const reviewers = review.assignees.filter(a => a.status === 'reviewed');
   const hasReviewers = reviewers.length > 0;
 
   const handleMarkDone = async () => {
+    if (isLoading.markDone) return; // Idempotent check
     if (!confirm("Mark this review as done?")) return;
-    await updateReviewStatus(review.id, "done");
 
-    if (webhookUrl) {
-      const accessToken = await getAccessToken();
-      const mentions = await formatMentions(review.mentions, allowedUsers, webhookUrl, accessToken);
-      const roomUrl = getRoomUrl(review.roomId);
-      await sendGoogleChatNotification(
-        webhookUrl,
-        `✅ Review Done: ${review.title}\n${review.link}\n${mentions ? `CC: ${mentions}` : ''}\n\n📋 View in Review Queue: ${roomUrl}`
-      );
+    setIsLoading(prev => ({ ...prev, markDone: true }));
+    try {
+      await updateReviewStatus(review.id, "done");
+
+      if (webhookUrl) {
+        const accessToken = await getAccessToken();
+        const mentions = await formatMentions(review.mentions, allowedUsers, webhookUrl, accessToken);
+        const roomUrl = getRoomUrl(review.roomId);
+        await sendGoogleChatNotification(
+          webhookUrl,
+          `✅ Review Done: ${review.title}\nID: ${review.id}\n${review.link}\n${mentions ? `\nCC: ${mentions}` : ''}\n\n📋 View in Review Queue: ${roomUrl}`
+        );
+      }
+    } finally {
+      setIsLoading(prev => ({ ...prev, markDone: false }));
     }
   };
 
   const handleDelete = async () => {
+    if (isLoading.delete) return; // Idempotent check
     if (!confirm("Delete this review?")) return;
-    await updateReviewStatus(review.id, "deleted");
+
+    setIsLoading(prev => ({ ...prev, delete: true }));
+    try {
+      await updateReviewStatus(review.id, "deleted");
+    } finally {
+      setIsLoading(prev => ({ ...prev, delete: false }));
+    }
   };
 
   const handleMarkUpdated = async () => {
+    if (isLoading.markUpdated) return; // Idempotent check
     if (!hasReviewers) {
       alert("At least one person must mark this review as reviewed before you can mark it as updated.");
       return;
     }
 
-    await markReviewAsUpdated(review.id);
+    setIsLoading(prev => ({ ...prev, markUpdated: true }));
+    try {
+      await markReviewAsUpdated(review.id);
 
-    if (webhookUrl) {
-      const accessToken = await getAccessToken();
-      // Notify only those who reviewed it
-      const reviewerEmails = reviewers.map(r => r.email);
-      const mentions = await formatMentions(reviewerEmails, allowedUsers, webhookUrl, accessToken);
-      const roomUrl = getRoomUrl(review.roomId);
-      await sendGoogleChatNotification(
-        webhookUrl,
-        `🔄 Review Updated: ${review.title}\n${review.link}\n${mentions ? `CC: ${mentions}` : ''}\n\n📋 View in Review Queue: ${roomUrl}`
-      );
+      if (webhookUrl) {
+        const accessToken = await getAccessToken();
+        // Notify those who reviewed it AND the review creator
+        const reviewerEmails = reviewers.map(r => r.email);
+        const allMentions = [...new Set([...reviewerEmails, review.createdBy])];
+        const mentions = await formatMentions(allMentions, allowedUsers, webhookUrl, accessToken);
+        const roomUrl = getRoomUrl(review.roomId);
+        await sendGoogleChatNotification(
+          webhookUrl,
+          `🔄 Review Updated: ${review.title}\nID: ${review.id}\n${review.link}\n${mentions ? `\nCC: ${mentions}` : ''}\n\n📋 View in Review Queue: ${roomUrl}`
+        );
+      }
+    } finally {
+      setIsLoading(prev => ({ ...prev, markUpdated: false }));
     }
   };
 
   const handlePing = async () => {
-    if (webhookUrl) {
+    if (isLoading.ping) return; // Idempotent check
+    if (!webhookUrl) {
+      alert("No Google Chat Webhook URL configured for this room.");
+      return;
+    }
+
+    setIsLoading(prev => ({ ...prev, ping: true }));
+    try {
       const accessToken = await getAccessToken();
       const mentions = await formatMentions(review.mentions, allowedUsers, webhookUrl, accessToken);
       const roomUrl = getRoomUrl(review.roomId);
+
+      // Calculate stuck time information
+      const now = new Date();
+      const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+
+      const stuckInfo: string[] = [];
+
+      // Check if stuck for more than 1 day since last update
+      if (review.updatedAt) {
+        const updatedAt = review.updatedAt.toDate();
+        if (updatedAt <= oneDayAgo) {
+          const timeSinceUpdate = formatTimeSince(updatedAt, "since last update");
+          stuckInfo.push(`⚠️ *Stuck ${timeSinceUpdate}*`);
+        }
+      }
+
+      // Check if stuck for more than 3 days since created
+      if (review.createdAt) {
+        const createdAt = review.createdAt.toDate();
+        if (createdAt <= threeDaysAgo) {
+          const timeSinceCreated = formatTimeSince(createdAt, "since created");
+          stuckInfo.push(`🚨 *Stuck ${timeSinceCreated}*`);
+        }
+      }
+
+      const stuckInfoText = stuckInfo.length > 0 ? `\n\n${stuckInfo.join('\n')}\n` : '';
+
       await sendGoogleChatNotification(
         webhookUrl,
-        `🔔 Ping: ${review.title}\n${review.link}\n${mentions ? `CC: ${mentions}` : ''}\n\n📋 View in Review Queue: ${roomUrl}`
+        `🔔 Ping: ${review.title}\nID: ${review.id}\n${review.link}${stuckInfoText}${mentions ? `\nCC: ${mentions}` : ''}\n\n📋 View in Review Queue: ${roomUrl}`
       );
       alert("Ping sent to Google Chat!");
-    } else {
-      alert("No Google Chat Webhook URL configured for this room.");
+    } finally {
+      setIsLoading(prev => ({ ...prev, ping: false }));
     }
   };
 
   const handleMarkReviewed = async () => {
+    if (isLoading.markReviewed) return; // Idempotent check
     if (!user?.email) return;
-    await markAsReviewed(review.id, user.email);
+
+    setIsLoading(prev => ({ ...prev, markReviewed: true }));
+    try {
+      await markAsReviewed(review.id, user.email);
+
+      // Notify the review creator
+      if (webhookUrl && review.createdBy) {
+        const accessToken = await getAccessToken();
+        const creatorMentions = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
+        const roomUrl = getRoomUrl(review.roomId);
+        await sendGoogleChatNotification(
+          webhookUrl,
+          `✅ Review Marked as Reviewed: ${review.title}\nID: ${review.id}\n${review.link}\nReviewed by: ${user.email}${creatorMentions ? `\nCC: ${creatorMentions}` : ''}\n\n📋 View in Review Queue: ${roomUrl}`
+        );
+      }
+    } finally {
+      setIsLoading(prev => ({ ...prev, markReviewed: false }));
+    }
   };
 
   const isAssigned = review.assignees.some(a => a.email === userEmail);
@@ -101,6 +182,9 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
 
   // Get the time to display
   const displayTime = showUpdatedTime ? review.updatedAt : review.createdAt;
+
+  // Calculate time since last update for detailed display
+  const timeSinceUpdate = review.updatedAt ? formatTimeSince(review.updatedAt.toDate(), "since last update") : null;
 
   const handleCardClick = (e: React.MouseEvent) => {
     // Don't toggle if clicking on the link or action buttons
@@ -132,14 +216,19 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
         <div className="flex justify-between items-start gap-2">
           <div className="flex-1 min-w-0 pr-2">
             <div className="flex items-start justify-between gap-2 mb-1">
-              <h3 className="text-base md:text-lg font-bold break-words flex-1">{review.title}</h3>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base md:text-lg font-bold break-words">{review.title}</h3>
+                <div className="mt-0.5 text-xs text-white/40 font-mono">
+                  ID: {review.id}
+                </div>
+              </div>
               {displayTime && (
                 <span className={`text-xs whitespace-nowrap shrink-0 px-2 py-1 rounded-full backdrop-blur-sm transition-all ${
                   isOldReview
                     ? 'bg-orange-500/20 border border-orange-400/40 text-orange-200 shadow-lg shadow-orange-500/10'
                     : 'text-white/50'
                 }`}>
-                  {formatRelativeTime(displayTime.toDate())}
+                  {showUpdatedTime && timeSinceUpdate ? timeSinceUpdate : formatRelativeTime(displayTime.toDate())}
                 </span>
               )}
             </div>
@@ -157,9 +246,10 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
               {review.assignees.map((assignee) => (
                 <span
                   key={assignee.email}
-                  className={`text-xs px-2 py-0.5 md:py-1 rounded-full border ${assignee.status === 'reviewed'
-                    ? 'bg-green-500/20 border-green-500/30 text-green-200'
-                    : 'bg-white/10 border-white/20 text-white/70'
+                  className={`text-xs px-2 py-0.5 md:py-1 rounded-full border transition-all ${
+                    assignee.status === 'reviewed'
+                      ? 'bg-green-500/30 border-green-400/50 text-green-100 font-semibold shadow-md shadow-green-500/20 ring-1 ring-green-400/30'
+                      : 'bg-white/10 border-white/20 text-white/70'
                     }`}
                 >
                   {assignee.email.split('@')[0]}
@@ -205,9 +295,25 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
         </div>
 
         {/* Actions container - horizontal when expanded */}
-        <div className={`flex flex-wrap gap-1.5 md:gap-2 transition-all duration-300 ease-in-out ${
+        <div className={`flex flex-col gap-2 transition-all duration-300 ease-in-out ${
           isActionsExpanded ? 'max-h-96 opacity-100 mt-2 md:mt-0 translate-y-0' : 'max-h-0 overflow-hidden opacity-0 mt-0 -translate-y-2'
         }`}>
+          {/* Created At and Last Updated */}
+          <div className="flex flex-col gap-1 text-xs text-white/60">
+            {review.createdAt && (
+              <div>
+                <span className="font-medium">Created At:</span> {formatExactDateTime(review.createdAt.toDate())}
+              </div>
+            )}
+            {review.updatedAt && (
+              <div>
+                <span className="font-medium">Last Updated:</span> {formatExactDateTime(review.updatedAt.toDate())}
+              </div>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap gap-1.5 md:gap-2">
           {/* Review Owner Actions */}
           {isOwner && (
             <>
@@ -217,6 +323,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
                   e.stopPropagation();
                   handleMarkDone();
                 }}
+                isLoading={isLoading.markDone}
                 className={`action-button flex items-center gap-1.5 md:gap-2 px-3! py-2! md:px-4! md:py-2.5! transition-all duration-300 ${
                   isActionsExpanded ? 'opacity-100 translate-y-0 delay-75' : 'opacity-0 -translate-y-2'
                 }`}
@@ -233,6 +340,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
                     e.stopPropagation();
                     handleMarkUpdated();
                   }}
+                  isLoading={isLoading.markUpdated}
                   className={`action-button flex items-center gap-1.5 md:gap-2 px-3! py-2! md:px-4! md:py-2.5! transition-all duration-300 ${
                     isActionsExpanded ? 'opacity-100 translate-y-0 delay-100' : 'opacity-0 -translate-y-2'
                   }`}
@@ -254,6 +362,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
                   e.stopPropagation();
                   handlePing();
                 }}
+                isLoading={isLoading.ping}
                 className={`action-button flex items-center gap-1.5 md:gap-2 px-3! py-2! md:px-4! md:py-2.5! transition-all duration-300 ${
                   isActionsExpanded ? 'opacity-100 translate-y-0 delay-150' : 'opacity-0 -translate-y-2'
                 }`}
@@ -268,6 +377,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
                   e.stopPropagation();
                   handleDelete();
                 }}
+                isLoading={isLoading.delete}
                 className={`action-button flex items-center gap-1.5 md:gap-2 px-3! py-2! md:px-4! md:py-2.5! transition-all duration-300 ${
                   isActionsExpanded ? 'opacity-100 translate-y-0 delay-200' : 'opacity-0 -translate-y-2'
                 }`}
@@ -286,6 +396,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
                   e.stopPropagation();
                   handleMarkReviewed();
                 }}
+                isLoading={isLoading.markReviewed}
                 className={`action-button text-xs whitespace-nowrap px-3! py-2! transition-all duration-300 ${
                   isActionsExpanded ? 'opacity-100 translate-y-0 delay-75' : 'opacity-0 -translate-y-2'
                 }`}
@@ -299,6 +410,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
                   e.stopPropagation();
                   handleDelete();
                 }}
+                isLoading={isLoading.delete}
                 className={`action-button flex items-center gap-1.5 md:gap-2 px-3! py-2! md:px-4! md:py-2.5! transition-all duration-300 ${
                   isActionsExpanded ? 'opacity-100 translate-y-0 delay-100' : 'opacity-0 -translate-y-2'
                 }`}
@@ -325,6 +437,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
               <span className="text-xs md:text-sm">Delete</span>
             </GlassButton>
           )}
+          </div>
         </div>
       </div>
     </GlassCard>

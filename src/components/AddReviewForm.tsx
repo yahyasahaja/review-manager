@@ -6,7 +6,7 @@ import { GlassButton } from "./ui/GlassButton";
 import { addReview, Room } from "@/lib/db";
 import { useAuth } from "@/context/AuthContext";
 import { sendGoogleChatNotification, formatMentions } from "@/lib/googleChat";
-import { getRoomUrl } from "@/lib/utils";
+import { getRoomUrl, isValidUrl, normalizeUrl } from "@/lib/utils";
 
 interface AddReviewFormProps {
   room: Room;
@@ -17,6 +17,7 @@ export function AddReviewForm({ room, onSuccess }: AddReviewFormProps) {
   const { user, getAccessToken } = useAuth();
   const [title, setTitle] = useState("");
   const [link, setLink] = useState("");
+  const [linkError, setLinkError] = useState("");
   const [mentions, setMentions] = useState<string[]>([]);
   const [mentionInput, setMentionInput] = useState("");
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -26,12 +27,21 @@ export function AddReviewForm({ room, onSuccess }: AddReviewFormProps) {
     e.preventDefault();
     if (!user) return;
 
+    // Validate URL
+    if (!isValidUrl(link)) {
+      setLinkError("Please enter a valid URL (must start with http:// or https://)");
+      return;
+    }
+
+    // Normalize URL (add https:// if missing)
+    const normalizedLink = normalizeUrl(link);
+
     // Auto-add mentions if they are in the allowed users list
     const assignees = mentions.map(email => ({ email, status: "pending" as const }));
 
-    await addReview(room.slug, {
+    const reviewId = await addReview(room.slug, {
       title,
-      link,
+      link: normalizedLink,
       createdBy: user.email || "",
       assignees,
       mentions,
@@ -43,12 +53,13 @@ export function AddReviewForm({ room, onSuccess }: AddReviewFormProps) {
       const roomUrl = getRoomUrl(room.slug);
       await sendGoogleChatNotification(
         room.webhookUrl,
-        `🆕 New Review: ${title}\n${link}\n${mentionText ? `CC: ${mentionText}` : ''}\n\n📋 View in Review Queue: ${roomUrl}`
+        `🆕 New Review: ${title}\nID: ${reviewId}\n${normalizedLink}\n${mentionText ? `\nCC: ${mentionText}` : ''}\n\n📋 View in Review Queue: ${roomUrl}`
       );
     }
 
     setTitle("");
     setLink("");
+    setLinkError("");
     setMentions([]);
     onSuccess?.();
   };
@@ -143,11 +154,27 @@ export function AddReviewForm({ room, onSuccess }: AddReviewFormProps) {
         </div>
         <div>
           <GlassInput
-            placeholder="PR / Doc Link"
+            placeholder="PR / Doc Link (must start with http:// or https://)"
             value={link}
-            onChange={(e) => setLink(e.target.value)}
+            onChange={(e) => {
+              setLink(e.target.value);
+              // Clear error when user starts typing
+              if (linkError) setLinkError("");
+            }}
+            onBlur={(e) => {
+              // Validate on blur
+              if (e.target.value && !isValidUrl(e.target.value)) {
+                setLinkError("Please enter a valid URL (must start with http:// or https://)");
+              } else {
+                setLinkError("");
+              }
+            }}
             required
+            className={linkError ? "border-red-400/50" : ""}
           />
+          {linkError && (
+            <p className="mt-1 text-xs text-red-400 ml-1">{linkError}</p>
+          )}
         </div>
 
         <div className="relative">

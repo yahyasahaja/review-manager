@@ -125,20 +125,24 @@ export function RoomSettings({ room, onUpdate }: RoomSettingsProps) {
         return;
       }
 
-      const email = parts[0].toLowerCase().trim();
+      // Preserve original email casing for display, but use lowercase for key
+      const originalEmail = parts[0].trim();
+      const emailLower = originalEmail.toLowerCase();
       const userId = parts.length > 1 ? parts.slice(1).join(' ').trim() : undefined;
 
       // Basic email validation
-      if (!email.includes('@')) {
-        errors.push(`Line ${index + 1}: Invalid email format: ${email}`);
+      if (!emailLower.includes('@')) {
+        errors.push(`Line ${index + 1}: Invalid email format: ${originalEmail}`);
         errorCount++;
         return;
       }
 
       // Upsert: update if exists, add if new
-      updatedUsers.set(email, {
-        email: email,
-        googleChatUserId: userId || updatedUsers.get(email)?.googleChatUserId,
+      // Use lowercase email as key for deduplication, but preserve original casing
+      const existingUser = updatedUsers.get(emailLower);
+      updatedUsers.set(emailLower, {
+        email: originalEmail, // Preserve original casing
+        googleChatUserId: userId || existingUser?.googleChatUserId,
       });
       successCount++;
     });
@@ -298,13 +302,40 @@ export function RoomSettings({ room, onUpdate }: RoomSettingsProps) {
           )}
 
           <div className="space-y-2">
-            {allowedUsers.map((user) => (
+            {allowedUsers.map((user, index) => {
+              // Extract username and domain for display
+              const emailParts = user.email.split('@');
+              const username = emailParts[0];
+              const domain = emailParts[1] || '';
+
+              // Find all users with the same username
+              const sameUsernameUsers = allowedUsers
+                .map((u, idx) => {
+                  const uParts = u.email.split('@');
+                  return { email: u.email, index: idx, username: uParts[0] };
+                })
+                .filter(u => u.username === username)
+                .sort((a, b) => a.index - b.index);
+
+              // Show identifier if there are multiple users with same username
+              const showIdentifier = sameUsernameUsers.length > 1;
+              const identifierNumber = sameUsernameUsers.findIndex(u => u.email === user.email) + 1;
+
+              return (
               <div
                 key={user.email}
                 className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10"
               >
                 <div className="flex-1">
-                  <div className="text-sm font-medium">{user.email}</div>
+                  <div className="text-sm font-medium">
+                    {showIdentifier && (
+                      <span className="inline-block mr-2 px-1.5 py-0.5 text-xs font-bold bg-blue-500/30 text-blue-200 rounded border border-blue-400/50">
+                        #{identifierNumber}
+                      </span>
+                    )}
+                    <span className="font-semibold">{username}</span>
+                    {domain && <span className="text-white/70">@{domain}</span>}
+                  </div>
                   {editingUserId === user.email ? (
                     <div className="flex gap-2 mt-2">
                       <GlassInput
@@ -370,7 +401,8 @@ export function RoomSettings({ room, onUpdate }: RoomSettingsProps) {
                   </button>
                 )}
               </div>
-            ))}
+              );
+            })}
 
             <div className="flex gap-2 mt-3">
               <GlassInput

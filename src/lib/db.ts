@@ -108,13 +108,14 @@ export async function updateRoom(slug: string, updates: Partial<Omit<Room, "slug
 export async function addReview(roomId: string, data: Omit<Review, "id" | "roomId" | "createdAt" | "updatedAt" | "status">) {
   const firestore = checkDb();
   const reviewsRef = collection(firestore, "reviews");
-  await addDoc(reviewsRef, {
+  const docRef = await addDoc(reviewsRef, {
     ...data,
     roomId,
     status: "active",
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+  return docRef.id; // Return the review ID
 }
 
 export async function getReviews(roomId: string) {
@@ -151,6 +152,11 @@ export async function updateReviewStatus(reviewId: string, status: "done" | "del
   // If deleting, manage the deleted items queue (max 10 items)
   if (status === "deleted") {
     await manageDeletedReviewsQueue(review.roomId);
+  }
+
+  // If marking as done, manage the done items queue (max 10 items)
+  if (status === "done") {
+    await manageDoneReviewsQueue(review.roomId);
   }
 }
 
@@ -189,10 +195,58 @@ async function manageDeletedReviewsQueue(roomId: string) {
   }
 }
 
+/**
+ * Manage done reviews queue - keep max 10 done items, permanently delete older ones
+ */
+async function manageDoneReviewsQueue(roomId: string) {
+  const firestore = checkDb();
+  const reviewsRef = collection(firestore, "reviews");
+
+  // Get all done reviews for this room, ordered by updatedAt (oldest first)
+  const q = query(
+    reviewsRef,
+    where("roomId", "==", roomId),
+    where("status", "==", "done"),
+    orderBy("updatedAt", "asc")
+  );
+
+  const querySnapshot = await getDocs(q);
+  const doneReviews = querySnapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data()
+  } as Review & { id: string }));
+
+  // If more than 10 done items, permanently delete the oldest ones
+  if (doneReviews.length > 10) {
+    const toDelete = doneReviews.slice(0, doneReviews.length - 10);
+
+    // Permanently delete the oldest done reviews
+    const deletePromises = toDelete.map(review => {
+      const reviewRef = doc(firestore, "reviews", review.id);
+      return deleteDoc(reviewRef);
+    });
+
+    await Promise.all(deletePromises);
+  }
+}
+
 export async function markReviewAsUpdated(reviewId: string) {
   const firestore = checkDb();
   const reviewRef = doc(firestore, "reviews", reviewId);
+  const reviewSnap = await getDoc(reviewRef);
+
+  if (!reviewSnap.exists()) return;
+
+  const review = reviewSnap.data() as Review;
+
+  // Reset all reviewers back to pending status so they can review again
+  const resetAssignees = review.assignees.map(a => ({
+    ...a,
+    status: "pending" as const
+  }));
+
   await updateDoc(reviewRef, {
+    assignees: resetAssignees,
     updatedAt: serverTimestamp(),
   });
 }
