@@ -283,3 +283,23 @@ export async function updateReviewAssignees(reviewId: string, assignees: { email
     updatedAt: serverTimestamp(),
   });
 }
+
+export async function removeReviewer(reviewId: string, userEmail: string) {
+  const firestore = checkDb();
+  const reviewRef = doc(firestore, "reviews", reviewId);
+  const reviewSnap = await getDoc(reviewRef);
+
+  if (!reviewSnap.exists()) {
+    throw new Error("Review not found");
+  }
+
+  const review = reviewSnap.data() as Review;
+  const updatedAssignees = review.assignees.filter(a => a.email !== userEmail);
+
+  await updateDoc(reviewRef, {
+    assignees: updatedAssignees,
+    updatedAt: serverTimestamp(),
+  });
+
+  return updatedAssignees.length === 0; // Return true if no reviewers left
+}

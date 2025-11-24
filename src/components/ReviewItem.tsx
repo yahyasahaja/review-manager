@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { Review, updateReviewStatus, markAsReviewed, markReviewAsUpdated, updateReviewAssignees } from "@/lib/db";
+import { Review, updateReviewStatus, markAsReviewed, markReviewAsUpdated, updateReviewAssignees, removeReviewer } from "@/lib/db";
 import { GlassCard } from "./ui/GlassCard";
 import { GlassButton } from "./ui/GlassButton";
 import { GlassInput } from "./ui/GlassInput";
 import { useAuth } from "@/context/AuthContext";
-import { CheckCircleIcon, TrashIcon, BellIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, PencilIcon, XMarkIcon, CheckIcon } from "@heroicons/react/24/outline";
+import { CheckCircleIcon, TrashIcon, BellIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, PencilIcon, XMarkIcon, CheckIcon, HandThumbUpIcon } from "@heroicons/react/24/outline";
 import { sendGoogleChatNotification, formatMentions } from "@/lib/googleChat";
 import { getRoomUrl, formatRelativeTime, formatDetailedTime, formatTimeSince, formatExactDateTime } from "@/lib/utils";
 
@@ -32,6 +32,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
     markReviewed: false,
     delete: false,
     updateReviewers: false,
+    approve: false,
   });
 
   // Get list of reviewers (assignees who marked as reviewed)
@@ -233,6 +234,58 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
       }
     } finally {
       setIsLoading(prev => ({ ...prev, markReviewed: false }));
+    }
+  };
+
+  const handleApprove = async () => {
+    if (isLoading.approve) return; // Idempotent check
+    if (!user?.email) return;
+
+    setIsLoading(prev => ({ ...prev, approve: true }));
+    try {
+      // Remove the reviewer from the list
+      const noReviewersLeft = await removeReviewer(review.id, user.email);
+
+      // If no reviewers left, mark as done
+      if (noReviewersLeft) {
+        await updateReviewStatus(review.id, "done");
+      }
+
+      // Send notification
+      if (webhookUrl) {
+        const accessToken = await getAccessToken();
+        const roomUrl = getRoomUrl(review.roomId);
+
+        // Format owner mention
+        const ownerMention = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
+
+        // Format approver mention
+        const approverMention = await formatMentions([user.email], allowedUsers, webhookUrl, accessToken);
+
+        let notificationMessage = `👍 *Review Approved:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* ${ownerMention}\n👍 *Approved by:* ${approverMention}\n`;
+
+        if (noReviewersLeft) {
+          notificationMessage += `\n✅ *All reviewers approved - Review marked as Done*\n`;
+        }
+
+        notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
+
+        await sendGoogleChatNotification(webhookUrl, notificationMessage);
+      }
+
+      // If marked as done, also send the done notification
+      if (noReviewersLeft && webhookUrl) {
+        const accessToken = await getAccessToken();
+        const roomUrl = getRoomUrl(review.roomId);
+        const ownerMention = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
+
+        let notificationMessage = `✅ *Review Done:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* ${ownerMention}\n`;
+        notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
+
+        await sendGoogleChatNotification(webhookUrl, notificationMessage);
+      }
+    } finally {
+      setIsLoading(prev => ({ ...prev, approve: false }));
     }
   };
 
@@ -569,7 +622,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
           </div>
 
           {/* Expand/Collapse indicator */}
-          {(isOwner || isReviewer || isInRoom) && (
+          {(isOwner || isReviewer || (isAssigned && myStatus === 'reviewed') || isInRoom) && (
             <div className="shrink-0 pt-1 pointer-events-none">
               {isActionsExpanded ? (
                 <ChevronUpIcon className="w-4 h-4 md:w-5 md:h-5 text-white/50" />
@@ -683,11 +736,27 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
                   handleMarkReviewed();
                 }}
                 isLoading={isLoading.markReviewed}
-                className={`action-button text-xs whitespace-nowrap px-3! py-2! transition-all duration-300 ${
+                className={`action-button flex items-center gap-1.5 md:gap-2 px-3! py-2! md:px-4! md:py-2.5! transition-all duration-300 ${
                   isActionsExpanded ? 'opacity-100 translate-y-0 delay-75' : 'opacity-0 -translate-y-2'
                 }`}
               >
-                Mark Reviewed
+                <CheckCircleIcon className="w-3.5 h-3.5 md:w-4 md:h-4 text-green-400" />
+                <span className="text-xs md:text-sm">Reviewed</span>
+              </GlassButton>
+
+              <GlassButton
+                variant="ghost"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleApprove();
+                }}
+                isLoading={isLoading.approve}
+                className={`action-button flex items-center gap-1.5 md:gap-2 px-3! py-2! md:px-4! md:py-2.5! transition-all duration-300 ${
+                  isActionsExpanded ? 'opacity-100 translate-y-0 delay-100' : 'opacity-0 -translate-y-2'
+                }`}
+              >
+                <HandThumbUpIcon className="w-3.5 h-3.5 md:w-4 md:h-4 text-green-400" />
+                <span className="text-xs md:text-sm">Approve</span>
               </GlassButton>
 
               <GlassButton
@@ -698,13 +767,31 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
                 }}
                 isLoading={isLoading.delete}
                 className={`action-button flex items-center gap-1.5 md:gap-2 px-3! py-2! md:px-4! md:py-2.5! transition-all duration-300 ${
-                  isActionsExpanded ? 'opacity-100 translate-y-0 delay-100' : 'opacity-0 -translate-y-2'
+                  isActionsExpanded ? 'opacity-100 translate-y-0 delay-125' : 'opacity-0 -translate-y-2'
                 }`}
               >
                 <TrashIcon className="w-3.5 h-3.5 md:w-4 md:h-4" />
                 <span className="text-xs md:text-sm">Delete</span>
               </GlassButton>
             </>
+          )}
+
+          {/* Reviewer Actions (assignee with reviewed status - can also approve) */}
+          {!isOwner && isAssigned && myStatus === 'reviewed' && (
+            <GlassButton
+              variant="ghost"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleApprove();
+              }}
+              isLoading={isLoading.approve}
+              className={`action-button flex items-center gap-1.5 md:gap-2 px-3! py-2! md:px-4! md:py-2.5! transition-all duration-300 ${
+                isActionsExpanded ? 'opacity-100 translate-y-0 delay-75' : 'opacity-0 -translate-y-2'
+              }`}
+            >
+              <HandThumbUpIcon className="w-3.5 h-3.5 md:w-4 md:h-4 text-green-400" />
+              <span className="text-xs md:text-sm">Approve</span>
+            </GlassButton>
           )}
 
           {/* Everyone in room can delete (if not owner and not reviewer) */}
