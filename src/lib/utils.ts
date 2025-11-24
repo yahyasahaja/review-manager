@@ -155,7 +155,7 @@ export function normalizeUrl(url: string): string {
 export function generateReviewSummary(
   reviews: Array<{ id: string; title: string; link: string; createdAt?: { toDate: () => Date } | null; updatedAt?: { toDate: () => Date } | null; assignees: Array<{ email: string; status: string }>; createdBy: string }>,
   roomUrl: string,
-  reviewMentionsMap?: Map<string, string>
+  reviewMentionsData?: Map<string, { ownerMention: string; reviewersMention: string; pendingMention: string }>
 ): string {
   if (reviews.length === 0) {
     return `📋 *Review List Summary*\n\nNo active reviews at this time.\n\n📋 View in Review Queue: ${roomUrl}`;
@@ -218,29 +218,24 @@ export function generateReviewSummary(
       summary += `   ${timeParts.join(' | ')}\n`;
     }
 
-    // Owner information
-    summary += `   👤 *Owner:* _${review.createdBy.split('@')[0]}_\n`;
+    // Owner information with mention
+    const ownerMention = reviewMentionsData?.get(review.id)?.ownerMention || review.createdBy.split('@')[0];
+    summary += `   👤 *Owner:* ${ownerMention}\n`;
 
-    // Reviewers status
+    // Reviewers status with mentions
     if (totalAssignees > 0) {
+      const mentionsData = reviewMentionsData?.get(review.id);
+      const reviewersMention = mentionsData?.reviewersMention || '';
+      const pendingMention = mentionsData?.pendingMention || '';
+
       summary += `   👥 *Reviewers:* ${reviewedCount}/${totalAssignees} reviewed`;
-      if (reviewedCount > 0) {
-        const reviewerNames = reviewers.map(r => r.email.split('@')[0]).join(', ');
-        summary += ` (_${reviewerNames}_)`;
+      if (reviewedCount > 0 && reviewersMention) {
+        summary += ` (${reviewersMention})`;
       }
-      if (pendingReviewers.length > 0) {
-        const pendingNames = pendingReviewers.map(r => r.email.split('@')[0]).join(', ');
-        summary += ` | ${pendingReviewers.length} pending (_${pendingNames}_)`;
+      if (pendingReviewers.length > 0 && pendingMention) {
+        summary += ` | ${pendingReviewers.length} pending (${pendingMention})`;
       }
       summary += `\n`;
-
-      // Add mentions for this review's assignees (pending reviewers and owner)
-      if (reviewMentionsMap && reviewMentionsMap.has(review.id)) {
-        const mentions = reviewMentionsMap.get(review.id);
-        if (mentions) {
-          summary += `   📢 *Notifying Owner & Pending Reviewers:*\n   ${mentions}\n`;
-      }
-    }
     }
 
     summary += `\n`;

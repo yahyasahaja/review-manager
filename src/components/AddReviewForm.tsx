@@ -49,13 +49,15 @@ export function AddReviewForm({ room, onSuccess }: AddReviewFormProps) {
 
     if (room.webhookUrl) {
       const accessToken = await getAccessToken();
-      const mentionText = await formatMentions(mentions, room.allowedUsers, room.webhookUrl, accessToken);
       const roomUrl = getRoomUrl(room.slug);
-      // Build notification with formatting
-      let notificationMessage = `🆕 *New Review:* ${title}\n*ID:* \`${reviewId}\`\n🔗 ${normalizedLink}\n`;
 
-      if (mentionText) {
-        notificationMessage += `\n📢 *Notifying Reviewers:*\n${mentionText}\n`;
+      // Build notification with formatting
+      let notificationMessage = `🆕 *New Review:* _${title}_\n*ID:* \`${reviewId}\`\n🔗 ${normalizedLink}\n`;
+
+      // Format reviewers mentions inline
+      if (mentions.length > 0) {
+        const reviewerMentions = await formatMentions(mentions, room.allowedUsers, room.webhookUrl, accessToken);
+        notificationMessage += `\n👥 *Reviewers:* ${reviewerMentions}\n`;
       }
 
       notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;

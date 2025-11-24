@@ -27,24 +27,33 @@ function SendSummaryButton({ reviews, room, getAccessToken }: { reviews: Review[
           const accessToken = await getAccessToken();
           const roomUrl = getRoomUrl(room.slug);
 
-          // Format mentions for each review - include owner and pending reviewers
-          const reviewMentionsMap = new Map<string, string>();
-          for (const review of reviews) {
-            const pendingReviewers = review.assignees.filter(a => a.status === 'pending');
-            const notifyEmails = [...new Set([
-              review.createdBy, // Owner
-              ...pendingReviewers.map(r => r.email) // Pending reviewers
-            ])];
+          // Format mentions for each review - separate owner, reviewers, and pending reviewers
+          const reviewMentionsData = new Map<string, {
+            ownerMention: string;
+            reviewersMention: string;
+            pendingMention: string;
+          }>();
 
-            if (notifyEmails.length > 0) {
-              const mentions = await formatMentions(notifyEmails, room.allowedUsers, room.webhookUrl, accessToken);
-              if (mentions) {
-                reviewMentionsMap.set(review.id, mentions);
-              }
-            }
+          for (const review of reviews) {
+            const reviewedReviewers = review.assignees.filter(a => a.status === 'reviewed');
+            const pendingReviewers = review.assignees.filter(a => a.status === 'pending');
+
+            const ownerMention = await formatMentions([review.createdBy], room.allowedUsers, room.webhookUrl, accessToken);
+            const reviewersMention = reviewedReviewers.length > 0
+              ? await formatMentions(reviewedReviewers.map(r => r.email), room.allowedUsers, room.webhookUrl, accessToken)
+              : '';
+            const pendingMention = pendingReviewers.length > 0
+              ? await formatMentions(pendingReviewers.map(r => r.email), room.allowedUsers, room.webhookUrl, accessToken)
+              : '';
+
+            reviewMentionsData.set(review.id, {
+              ownerMention,
+              reviewersMention,
+              pendingMention
+            });
           }
 
-          const summary = generateReviewSummary(reviews, roomUrl, reviewMentionsMap);
+          const summary = generateReviewSummary(reviews, roomUrl, reviewMentionsData);
 
           await sendGoogleChatNotification(room.webhookUrl, summary);
           alert("Review summary sent to Google Chat!");

@@ -50,21 +50,20 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
         const accessToken = await getAccessToken();
         const roomUrl = getRoomUrl(review.roomId);
 
-        // Get reviewers info
+        // Get reviewers who reviewed
         const reviewers = review.assignees.filter(a => a.status === 'reviewed');
-        const reviewersInfo = reviewers.length > 0
-          ? `\n👥 Reviewers: ${reviewers.map(r => r.email.split('@')[0]).join(', ')} (${reviewers.length} reviewed)`
-          : '';
 
-        // Notify owner and reviewers
-        const notifyEmails = [...new Set([review.createdBy, ...reviewers.map(r => r.email)])];
-        const mentions = await formatMentions(notifyEmails, allowedUsers, webhookUrl, accessToken);
+        // Format owner mention
+        const ownerMention = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
 
-        let notificationMessage = `✅ *Review Done:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* _${review.createdBy.split('@')[0]}_${reviewersInfo}\n`;
-
-        if (mentions) {
-          notificationMessage += `\n📢 *Notifying:*\n${mentions}\n`;
+        // Format reviewers mentions
+        let reviewersMention = '';
+        if (reviewers.length > 0) {
+          const reviewerMentions = await formatMentions(reviewers.map(r => r.email), allowedUsers, webhookUrl, accessToken);
+          reviewersMention = `\n👥 *Reviewers:* ${reviewerMentions} (${reviewers.length} reviewed)`;
         }
+
+        let notificationMessage = `✅ *Review Done:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* ${ownerMention}${reviewersMention}\n`;
 
         notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
 
@@ -104,20 +103,18 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
 
         // Get reviewers info - these are the reviewers who had reviewed before the update
         // (they will be reset to pending after markReviewAsUpdated is called)
-        const reviewersInfo = reviewers.length > 0
-          ? `\n👥 *Reviewers:* ${reviewers.map(r => r.email.split('@')[0]).join(', ')} (${reviewers.length} reviewed)`
-          : '';
 
-        // Notify those who reviewed it AND the review creator
-        const reviewerEmails = reviewers.map(r => r.email);
-        const allMentions = [...new Set([...reviewerEmails, review.createdBy])];
-        const mentions = await formatMentions(allMentions, allowedUsers, webhookUrl, accessToken);
+        // Format owner mention
+        const ownerMention = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
 
-        let notificationMessage = `🔄 *Review Updated:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* _${review.createdBy.split('@')[0]}_${reviewersInfo}\n`;
-
-        if (mentions) {
-          notificationMessage += `\n📢 *Notifying Owner & Reviewers:*\n${mentions}\n`;
+        // Format reviewers mentions
+        let reviewersMention = '';
+        if (reviewers.length > 0) {
+          const reviewerMentions = await formatMentions(reviewers.map(r => r.email), allowedUsers, webhookUrl, accessToken);
+          reviewersMention = `\n👥 *Reviewers:* ${reviewerMentions} (${reviewers.length} reviewed)`;
         }
+
+        let notificationMessage = `🔄 *Review Updated:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* ${ownerMention}${reviewersMention}\n`;
 
         notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
 
@@ -170,26 +167,25 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
       // Get reviewers info
       const reviewers = review.assignees.filter(a => a.status === 'reviewed');
       const pendingReviewers = review.assignees.filter(a => a.status === 'pending');
-      const reviewersInfo = reviewers.length > 0
-        ? `\n👥 Reviewers: ${reviewers.map(r => r.email.split('@')[0]).join(', ')} (${reviewers.length} reviewed)`
-        : '';
-      const pendingInfo = pendingReviewers.length > 0
-        ? `\n⏳ Pending Reviewers: ${pendingReviewers.map(r => r.email.split('@')[0]).join(', ')} (${pendingReviewers.length})`
-        : '';
 
-      // Notify pending reviewers, owner, and any additional mentions
-      const notifyEmails = [...new Set([
-        ...pendingReviewers.map(r => r.email),
-        review.createdBy,
-        ...(review.mentions || [])
-      ])];
-      const mentions = await formatMentions(notifyEmails, allowedUsers, webhookUrl, accessToken);
+      // Format owner mention
+      const ownerMention = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
 
-      let notificationMessage = `🔔 *Ping:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* _${review.createdBy.split('@')[0]}_${reviewersInfo}${pendingInfo}${stuckInfoText}`;
-
-      if (mentions) {
-        notificationMessage += `\n📢 *Notifying Owner & Pending Reviewers:*\n${mentions}\n`;
+      // Format reviewers mentions
+      let reviewersMention = '';
+      if (reviewers.length > 0) {
+        const reviewerMentions = await formatMentions(reviewers.map(r => r.email), allowedUsers, webhookUrl, accessToken);
+        reviewersMention = `\n👥 *Reviewers:* ${reviewerMentions} (${reviewers.length} reviewed)`;
       }
+
+      // Format pending reviewers mentions
+      let pendingMention = '';
+      if (pendingReviewers.length > 0) {
+        const pendingMentions = await formatMentions(pendingReviewers.map(r => r.email), allowedUsers, webhookUrl, accessToken);
+        pendingMention = `\n⏳ *Pending Reviewers:* ${pendingMentions} (${pendingReviewers.length})`;
+      }
+
+      let notificationMessage = `🔔 *Ping:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* ${ownerMention}${reviewersMention}${pendingMention}${stuckInfoText}`;
 
       notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
 
@@ -215,18 +211,21 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
 
         // Get all reviewers info
         const allReviewers = review.assignees.filter(a => a.status === 'reviewed');
-        const reviewersInfo = allReviewers.length > 0
-          ? `\n👥 Reviewers: ${allReviewers.map(r => r.email.split('@')[0]).join(', ')} (${allReviewers.length} reviewed)`
-          : '';
 
-        // Notify the owner
-        const ownerMentions = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
+        // Format owner mention
+        const ownerMention = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
 
-        let notificationMessage = `✅ *Review Marked as Reviewed:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* _${review.createdBy.split('@')[0]}_\n✅ *Reviewed by:* _${user.email.split('@')[0]}_${reviewersInfo}\n`;
+        // Format reviewer mention (the person who just reviewed)
+        const reviewerMention = await formatMentions([user.email], allowedUsers, webhookUrl, accessToken);
 
-        if (ownerMentions) {
-          notificationMessage += `\n📢 *Notifying Owner:*\n${ownerMentions}\n`;
+        // Format all reviewers mentions
+        let reviewersMention = '';
+        if (allReviewers.length > 0) {
+          const reviewerMentions = await formatMentions(allReviewers.map(r => r.email), allowedUsers, webhookUrl, accessToken);
+          reviewersMention = `\n👥 *Reviewers:* ${reviewerMentions} (${allReviewers.length} reviewed)`;
         }
+
+        let notificationMessage = `✅ *Review Marked as Reviewed:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* ${ownerMention}\n✅ *Reviewed by:* ${reviewerMention}${reviewersMention}\n`;
 
         notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
 
@@ -289,33 +288,30 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
         const accessToken = await getAccessToken();
         const roomUrl = getRoomUrl(review.roomId);
 
-        // Build notification message
-        let notificationMessage = `📝 *Reviewers Updated:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* _${review.createdBy.split('@')[0]}_\n`;
+        // Format owner mention
+        const ownerMention = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
 
-        // Reviewers info
+        // Build notification message
+        let notificationMessage = `📝 *Reviewers Updated:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* ${ownerMention}\n`;
+
+        // Reviewers info with mentions
         if (newReviewers.length > 0) {
-          notificationMessage += `👥 *Reviewers:* _${newReviewers.map(r => r.email.split('@')[0]).join(', ')}_ (${newReviewers.length} reviewed)\n`;
+          const reviewerMentions = await formatMentions(newReviewers.map(r => r.email), allowedUsers, webhookUrl, accessToken);
+          notificationMessage += `👥 *Reviewers:* ${reviewerMentions} (${newReviewers.length} reviewed)\n`;
         }
         if (pendingReviewers.length > 0) {
-          notificationMessage += `⏳ *Pending:* _${pendingReviewers.map(r => r.email.split('@')[0]).join(', ')}_ (${pendingReviewers.length})\n`;
+          const pendingMentions = await formatMentions(pendingReviewers.map(r => r.email), allowedUsers, webhookUrl, accessToken);
+          notificationMessage += `⏳ *Pending:* ${pendingMentions} (${pendingReviewers.length})\n`;
         }
 
-        // Changes summary
+        // Changes summary with mentions
         if (addedReviewers.length > 0) {
-          notificationMessage += `➕ *Added:* _${addedReviewers.map(r => r.email.split('@')[0]).join(', ')}_\n`;
+          const addedMentions = await formatMentions(addedReviewers.map(r => r.email), allowedUsers, webhookUrl, accessToken);
+          notificationMessage += `➕ *Added:* ${addedMentions}\n`;
         }
         if (removedReviewers.length > 0) {
-          notificationMessage += `➖ *Removed:* _${removedReviewers.map(r => r.email.split('@')[0]).join(', ')}_\n`;
-        }
-
-        // Mention newly added reviewers and the owner
-        const mentionsToNotify = [...new Set([
-          ...addedReviewers.map(r => r.email),
-          review.createdBy
-        ])];
-        const mentions = await formatMentions(mentionsToNotify, allowedUsers, webhookUrl, accessToken);
-        if (mentions) {
-          notificationMessage += `\n📢 *Notifying Owner & Newly Added Reviewers:*\n${mentions}\n`;
+          const removedMentions = await formatMentions(removedReviewers.map(r => r.email), allowedUsers, webhookUrl, accessToken);
+          notificationMessage += `➖ *Removed:* ${removedMentions}\n`;
         }
 
         notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
