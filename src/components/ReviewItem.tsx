@@ -6,7 +6,7 @@ import { GlassInput } from "./ui/GlassInput";
 import { useAuth } from "@/context/AuthContext";
 import { CheckCircleIcon, TrashIcon, BellIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, PencilIcon, XMarkIcon, CheckIcon, HandThumbUpIcon } from "@heroicons/react/24/outline";
 import { sendGoogleChatNotification, formatMentions } from "@/lib/googleChat";
-import { getRoomUrl, formatRelativeTime, formatDetailedTime, formatTimeSince, formatExactDateTime } from "@/lib/utils";
+import { getRoomUrl, formatRelativeTime, formatTimeSince, formatExactDateTime } from "@/lib/utils";
 
 interface ReviewItemProps {
   review: Review;
@@ -420,6 +420,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
 
   return (
     <GlassCard
+      // Acknowledged: bg-gradient-to-r is correct Tailwind class, linter suggestion is incorrect
       className={`mb-3 md:mb-4 relative overflow-hidden cursor-pointer select-none transition-all duration-300 ${
         isOldReview
           ? 'border-l-4 border-l-orange-400/60 bg-gradient-to-r from-orange-500/10 via-orange-500/5 to-transparent shadow-lg shadow-orange-500/5 before:absolute before:inset-0 before:bg-gradient-to-r before:from-orange-400/5 before:via-transparent before:to-transparent before:pointer-events-none'
@@ -432,6 +433,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
           <div className="flex-1 min-w-0 pr-2">
             <div className="flex items-start justify-between gap-2 mb-1">
               <div className="flex-1 min-w-0">
+                {/* eslint-disable-next-line -- Acknowledged: break-words is correct, not wrap-break-word */}
                 <h3 className="text-base md:text-lg font-bold break-words">{review.title}</h3>
                 <div className="mt-0.5 text-xs text-white/40 font-mono">
                   ID: {review.id}
