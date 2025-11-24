@@ -51,10 +51,16 @@ export function AddReviewForm({ room, onSuccess }: AddReviewFormProps) {
       const accessToken = await getAccessToken();
       const mentionText = await formatMentions(mentions, room.allowedUsers, room.webhookUrl, accessToken);
       const roomUrl = getRoomUrl(room.slug);
-      await sendGoogleChatNotification(
-        room.webhookUrl,
-        `🆕 New Review: ${title}\nID: ${reviewId}\n${normalizedLink}\n${mentionText ? `\nCC: ${mentionText}` : ''}\n\n📋 View in Review Queue: ${roomUrl}`
-      );
+      // Build notification with formatting
+      let notificationMessage = `🆕 *New Review:* ${title}\n*ID:* \`${reviewId}\`\n🔗 ${normalizedLink}\n`;
+
+      if (mentionText) {
+        notificationMessage += `\n📢 *Notifying Reviewers:*\n${mentionText}\n`;
+      }
+
+      notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
+
+      await sendGoogleChatNotification(room.webhookUrl, notificationMessage);
     }
 
     setTitle("");
@@ -71,7 +77,13 @@ export function AddReviewForm({ room, onSuccess }: AddReviewFormProps) {
   };
 
   const filteredUsers = room.allowedUsers
-    .filter(u => u.email.toLowerCase().includes(mentionInput.toLowerCase()))
+    .filter(u => {
+      const searchTerm = mentionInput.toLowerCase().trim();
+      if (!searchTerm) return false;
+      const name = u.email.split('@')[0].toLowerCase();
+      const email = u.email.toLowerCase();
+      return name.includes(searchTerm) || email.includes(searchTerm);
+    })
     .filter(u => !mentions.includes(u.email));
 
   // Update dropdown position when input changes or window resizes
@@ -180,7 +192,7 @@ export function AddReviewForm({ room, onSuccess }: AddReviewFormProps) {
         <div className="relative">
           <GlassInput
             ref={inputRef}
-            placeholder="Mention users (@...)"
+            placeholder="Search by name or email..."
             value={mentionInput}
             onChange={(e) => setMentionInput(e.target.value)}
             onKeyDown={(e) => {

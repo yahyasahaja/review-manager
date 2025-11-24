@@ -268,3 +268,18 @@ export async function markAsReviewed(reviewId: string, userEmail: string) {
     updatedAt: serverTimestamp(),
   });
 }
+
+export async function updateReviewAssignees(reviewId: string, assignees: { email: string; status: "pending" | "reviewed" }[]) {
+  const firestore = checkDb();
+  const reviewRef = doc(firestore, "reviews", reviewId);
+  const reviewSnap = await getDoc(reviewRef);
+
+  if (!reviewSnap.exists()) {
+    throw new Error("Review not found");
+  }
+
+  await updateDoc(reviewRef, {
+    assignees: assignees,
+    updatedAt: serverTimestamp(),
+  });
+}

@@ -27,12 +27,17 @@ function SendSummaryButton({ reviews, room, getAccessToken }: { reviews: Review[
           const accessToken = await getAccessToken();
           const roomUrl = getRoomUrl(room.slug);
 
-          // Format mentions for each review's assignees
+          // Format mentions for each review - include owner and pending reviewers
           const reviewMentionsMap = new Map<string, string>();
           for (const review of reviews) {
-            if (review.assignees.length > 0) {
-              const assigneeEmails = review.assignees.map(a => a.email);
-              const mentions = await formatMentions(assigneeEmails, room.allowedUsers, room.webhookUrl, accessToken);
+            const pendingReviewers = review.assignees.filter(a => a.status === 'pending');
+            const notifyEmails = [...new Set([
+              review.createdBy, // Owner
+              ...pendingReviewers.map(r => r.email) // Pending reviewers
+            ])];
+
+            if (notifyEmails.length > 0) {
+              const mentions = await formatMentions(notifyEmails, room.allowedUsers, room.webhookUrl, accessToken);
               if (mentions) {
                 reviewMentionsMap.set(review.id, mentions);
               }

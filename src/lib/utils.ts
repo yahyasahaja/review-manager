@@ -187,54 +187,62 @@ export function generateReviewSummary(
 
     // Build review entry
     summary += `${index + 1}. *${review.title}*\n`;
-    summary += `   ID: \`${review.id}\`\n`;
+    summary += `   *ID:* \`${review.id}\`\n`;
     summary += `   🔗 ${review.link}\n`;
 
-    // Time information with flags
+    // Time information with flags - combined in one line
+    const timeParts: string[] = [];
     if (isStuckCreated) {
-      summary += `   🚨 *STUCK ${timeSinceCreated} since created*\n`;
+      timeParts.push(`🚨 *STUCK ${timeSinceCreated} since created*`);
     } else if (createdAt) {
       const isOldCreated = createdAt <= threeDaysAgo;
       if (isOldCreated) {
-        summary += `   🚨 *Created: ${timeSinceCreated} ago (OVERDUE)*\n`;
+        timeParts.push(`🚨 *Created: ${timeSinceCreated} ago (OVERDUE)*`);
       } else {
-        summary += `   📅 Created: ${timeSinceCreated} ago\n`;
+        timeParts.push(`📅 *Created:* _${timeSinceCreated} ago_`);
       }
     }
 
     if (isStuckUpdate) {
-      summary += `   ⚠️ *STUCK ${timeSinceUpdated} since last update*\n`;
+      timeParts.push(`⚠️ *STUCK ${timeSinceUpdated} since last update*`);
     } else if (updatedAt) {
       const isOldUpdated = updatedAt <= oneDayAgo;
       if (isOldUpdated) {
-        summary += `   ⚠️ *Updated: ${timeSinceUpdated} ago (OVERDUE)*\n`;
+        timeParts.push(`⚠️ *Updated: ${timeSinceUpdated} ago (OVERDUE)*`);
       } else {
-        summary += `   🔄 Updated: ${timeSinceUpdated} ago\n`;
+        timeParts.push(`🔄 *Updated:* _${timeSinceUpdated} ago_`);
       }
     }
+
+    if (timeParts.length > 0) {
+      summary += `   ${timeParts.join(' | ')}\n`;
+    }
+
+    // Owner information
+    summary += `   👤 *Owner:* _${review.createdBy.split('@')[0]}_\n`;
 
     // Reviewers status
     if (totalAssignees > 0) {
-      summary += `   👥 Reviewers: ${reviewedCount}/${totalAssignees} reviewed`;
+      summary += `   👥 *Reviewers:* ${reviewedCount}/${totalAssignees} reviewed`;
       if (reviewedCount > 0) {
         const reviewerNames = reviewers.map(r => r.email.split('@')[0]).join(', ');
-        summary += ` (${reviewerNames})`;
+        summary += ` (_${reviewerNames}_)`;
       }
       if (pendingReviewers.length > 0) {
-        summary += ` | ${pendingReviewers.length} pending`;
+        const pendingNames = pendingReviewers.map(r => r.email.split('@')[0]).join(', ');
+        summary += ` | ${pendingReviewers.length} pending (_${pendingNames}_)`;
       }
       summary += `\n`;
 
-      // Add mentions for this review's assignees
+      // Add mentions for this review's assignees (pending reviewers and owner)
       if (reviewMentionsMap && reviewMentionsMap.has(review.id)) {
         const mentions = reviewMentionsMap.get(review.id);
         if (mentions) {
-          summary += `   CC: ${mentions}\n`;
-        }
+          summary += `   📢 *Notifying Owner & Pending Reviewers:*\n   ${mentions}\n`;
       }
     }
+    }
 
-    summary += `   👤 Created by: ${review.createdBy.split('@')[0]}\n`;
     summary += `\n`;
   });
 
@@ -242,3 +250,4 @@ export function generateReviewSummary(
 
   return summary;
 }
+

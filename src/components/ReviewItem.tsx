@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Review, updateReviewStatus, markAsReviewed, markReviewAsUpdated } from "@/lib/db";
+import { Review, updateReviewStatus, markAsReviewed, markReviewAsUpdated, updateReviewAssignees } from "@/lib/db";
 import { GlassCard } from "./ui/GlassCard";
 import { GlassButton } from "./ui/GlassButton";
+import { GlassInput } from "./ui/GlassInput";
 import { useAuth } from "@/context/AuthContext";
-import { CheckCircleIcon, TrashIcon, BellIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
+import { CheckCircleIcon, TrashIcon, BellIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, PencilIcon, XMarkIcon, CheckIcon } from "@heroicons/react/24/outline";
 import { sendGoogleChatNotification, formatMentions } from "@/lib/googleChat";
 import { getRoomUrl, formatRelativeTime, formatDetailedTime, formatTimeSince, formatExactDateTime } from "@/lib/utils";
 
@@ -21,12 +22,16 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
   const { user, getAccessToken } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
   const [isActionsExpanded, setIsActionsExpanded] = useState(false);
+  const [isEditingReviewers, setIsEditingReviewers] = useState(false);
+  const [selectedReviewers, setSelectedReviewers] = useState<Set<string>>(new Set());
+  const [reviewerSearchFilter, setReviewerSearchFilter] = useState("");
   const [isLoading, setIsLoading] = useState({
     markDone: false,
     markUpdated: false,
     ping: false,
     markReviewed: false,
     delete: false,
+    updateReviewers: false,
   });
 
   // Get list of reviewers (assignees who marked as reviewed)
@@ -43,12 +48,27 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
 
       if (webhookUrl) {
         const accessToken = await getAccessToken();
-        const mentions = await formatMentions(review.mentions, allowedUsers, webhookUrl, accessToken);
         const roomUrl = getRoomUrl(review.roomId);
-        await sendGoogleChatNotification(
-          webhookUrl,
-          `✅ Review Done: ${review.title}\nID: ${review.id}\n${review.link}\n${mentions ? `\nCC: ${mentions}` : ''}\n\n📋 View in Review Queue: ${roomUrl}`
-        );
+
+        // Get reviewers info
+        const reviewers = review.assignees.filter(a => a.status === 'reviewed');
+        const reviewersInfo = reviewers.length > 0
+          ? `\n👥 Reviewers: ${reviewers.map(r => r.email.split('@')[0]).join(', ')} (${reviewers.length} reviewed)`
+          : '';
+
+        // Notify owner and reviewers
+        const notifyEmails = [...new Set([review.createdBy, ...reviewers.map(r => r.email)])];
+        const mentions = await formatMentions(notifyEmails, allowedUsers, webhookUrl, accessToken);
+
+        let notificationMessage = `✅ *Review Done:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* _${review.createdBy.split('@')[0]}_${reviewersInfo}\n`;
+
+        if (mentions) {
+          notificationMessage += `\n📢 *Notifying:*\n${mentions}\n`;
+        }
+
+        notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
+
+        await sendGoogleChatNotification(webhookUrl, notificationMessage);
       }
     } finally {
       setIsLoading(prev => ({ ...prev, markDone: false }));
@@ -80,15 +100,28 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
 
       if (webhookUrl) {
         const accessToken = await getAccessToken();
+        const roomUrl = getRoomUrl(review.roomId);
+
+        // Get reviewers info - these are the reviewers who had reviewed before the update
+        // (they will be reset to pending after markReviewAsUpdated is called)
+        const reviewersInfo = reviewers.length > 0
+          ? `\n👥 *Reviewers:* ${reviewers.map(r => r.email.split('@')[0]).join(', ')} (${reviewers.length} reviewed)`
+          : '';
+
         // Notify those who reviewed it AND the review creator
         const reviewerEmails = reviewers.map(r => r.email);
         const allMentions = [...new Set([...reviewerEmails, review.createdBy])];
         const mentions = await formatMentions(allMentions, allowedUsers, webhookUrl, accessToken);
-        const roomUrl = getRoomUrl(review.roomId);
-        await sendGoogleChatNotification(
-          webhookUrl,
-          `🔄 Review Updated: ${review.title}\nID: ${review.id}\n${review.link}\n${mentions ? `\nCC: ${mentions}` : ''}\n\n📋 View in Review Queue: ${roomUrl}`
-        );
+
+        let notificationMessage = `🔄 *Review Updated:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* _${review.createdBy.split('@')[0]}_${reviewersInfo}\n`;
+
+        if (mentions) {
+          notificationMessage += `\n📢 *Notifying Owner & Reviewers:*\n${mentions}\n`;
+        }
+
+        notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
+
+        await sendGoogleChatNotification(webhookUrl, notificationMessage);
       }
     } finally {
       setIsLoading(prev => ({ ...prev, markUpdated: false }));
@@ -105,7 +138,6 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
     setIsLoading(prev => ({ ...prev, ping: true }));
     try {
       const accessToken = await getAccessToken();
-      const mentions = await formatMentions(review.mentions, allowedUsers, webhookUrl, accessToken);
       const roomUrl = getRoomUrl(review.roomId);
 
       // Calculate stuck time information
@@ -135,10 +167,33 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
 
       const stuckInfoText = stuckInfo.length > 0 ? `\n\n${stuckInfo.join('\n')}\n` : '';
 
-      await sendGoogleChatNotification(
-        webhookUrl,
-        `🔔 Ping: ${review.title}\nID: ${review.id}\n${review.link}${stuckInfoText}${mentions ? `\nCC: ${mentions}` : ''}\n\n📋 View in Review Queue: ${roomUrl}`
-      );
+      // Get reviewers info
+      const reviewers = review.assignees.filter(a => a.status === 'reviewed');
+      const pendingReviewers = review.assignees.filter(a => a.status === 'pending');
+      const reviewersInfo = reviewers.length > 0
+        ? `\n👥 Reviewers: ${reviewers.map(r => r.email.split('@')[0]).join(', ')} (${reviewers.length} reviewed)`
+        : '';
+      const pendingInfo = pendingReviewers.length > 0
+        ? `\n⏳ Pending Reviewers: ${pendingReviewers.map(r => r.email.split('@')[0]).join(', ')} (${pendingReviewers.length})`
+        : '';
+
+      // Notify pending reviewers, owner, and any additional mentions
+      const notifyEmails = [...new Set([
+        ...pendingReviewers.map(r => r.email),
+        review.createdBy,
+        ...(review.mentions || [])
+      ])];
+      const mentions = await formatMentions(notifyEmails, allowedUsers, webhookUrl, accessToken);
+
+      let notificationMessage = `🔔 *Ping:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* _${review.createdBy.split('@')[0]}_${reviewersInfo}${pendingInfo}${stuckInfoText}`;
+
+      if (mentions) {
+        notificationMessage += `\n📢 *Notifying Owner & Pending Reviewers:*\n${mentions}\n`;
+      }
+
+      notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
+
+      await sendGoogleChatNotification(webhookUrl, notificationMessage);
       alert("Ping sent to Google Chat!");
     } finally {
       setIsLoading(prev => ({ ...prev, ping: false }));
@@ -156,15 +211,126 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
       // Notify the review creator
       if (webhookUrl && review.createdBy) {
         const accessToken = await getAccessToken();
-        const creatorMentions = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
         const roomUrl = getRoomUrl(review.roomId);
-        await sendGoogleChatNotification(
-          webhookUrl,
-          `✅ Review Marked as Reviewed: ${review.title}\nID: ${review.id}\n${review.link}\nReviewed by: ${user.email}${creatorMentions ? `\nCC: ${creatorMentions}` : ''}\n\n📋 View in Review Queue: ${roomUrl}`
-        );
+
+        // Get all reviewers info
+        const allReviewers = review.assignees.filter(a => a.status === 'reviewed');
+        const reviewersInfo = allReviewers.length > 0
+          ? `\n👥 Reviewers: ${allReviewers.map(r => r.email.split('@')[0]).join(', ')} (${allReviewers.length} reviewed)`
+          : '';
+
+        // Notify the owner
+        const ownerMentions = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
+
+        let notificationMessage = `✅ *Review Marked as Reviewed:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* _${review.createdBy.split('@')[0]}_\n✅ *Reviewed by:* _${user.email.split('@')[0]}_${reviewersInfo}\n`;
+
+        if (ownerMentions) {
+          notificationMessage += `\n📢 *Notifying Owner:*\n${ownerMentions}\n`;
+        }
+
+        notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
+
+        await sendGoogleChatNotification(webhookUrl, notificationMessage);
       }
     } finally {
       setIsLoading(prev => ({ ...prev, markReviewed: false }));
+    }
+  };
+
+  const handleStartEditReviewers = () => {
+    // Initialize selected reviewers with current assignees
+    const currentAssignees = new Set(review.assignees.map(a => a.email));
+    setSelectedReviewers(currentAssignees);
+    setReviewerSearchFilter("");
+    setIsEditingReviewers(true);
+  };
+
+  const handleCancelEditReviewers = () => {
+    setIsEditingReviewers(false);
+    setSelectedReviewers(new Set());
+    setReviewerSearchFilter("");
+  };
+
+  const handleToggleReviewer = (email: string) => {
+    const newSelected = new Set(selectedReviewers);
+    if (newSelected.has(email)) {
+      newSelected.delete(email);
+    } else {
+      newSelected.add(email);
+    }
+    setSelectedReviewers(newSelected);
+  };
+
+  const handleSaveReviewers = async () => {
+    if (isLoading.updateReviewers) return;
+
+    // Build new assignees list - preserve status for existing reviewers, set new ones to pending
+    const existingAssigneesMap = new Map(
+      review.assignees.map(a => [a.email, a.status])
+    );
+
+    const newAssignees = Array.from(selectedReviewers).map(email => ({
+      email,
+      status: (existingAssigneesMap.get(email) || 'pending') as 'pending' | 'reviewed'
+    }));
+
+    // Get lists of reviewers for notification
+    const newReviewers = newAssignees.filter(a => a.status === 'reviewed');
+    const pendingReviewers = newAssignees.filter(a => a.status === 'pending');
+    const addedReviewers = newAssignees.filter(a => !review.assignees.some(existing => existing.email === a.email));
+    const removedReviewers = review.assignees.filter(existing => !newAssignees.some(newA => newA.email === existing.email));
+
+    setIsLoading(prev => ({ ...prev, updateReviewers: true }));
+    try {
+      await updateReviewAssignees(review.id, newAssignees);
+
+      // Send notification if webhook is configured
+      if (webhookUrl) {
+        const accessToken = await getAccessToken();
+        const roomUrl = getRoomUrl(review.roomId);
+
+        // Build notification message
+        let notificationMessage = `📝 *Reviewers Updated:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* _${review.createdBy.split('@')[0]}_\n`;
+
+        // Reviewers info
+        if (newReviewers.length > 0) {
+          notificationMessage += `👥 *Reviewers:* _${newReviewers.map(r => r.email.split('@')[0]).join(', ')}_ (${newReviewers.length} reviewed)\n`;
+        }
+        if (pendingReviewers.length > 0) {
+          notificationMessage += `⏳ *Pending:* _${pendingReviewers.map(r => r.email.split('@')[0]).join(', ')}_ (${pendingReviewers.length})\n`;
+        }
+
+        // Changes summary
+        if (addedReviewers.length > 0) {
+          notificationMessage += `➕ *Added:* _${addedReviewers.map(r => r.email.split('@')[0]).join(', ')}_\n`;
+        }
+        if (removedReviewers.length > 0) {
+          notificationMessage += `➖ *Removed:* _${removedReviewers.map(r => r.email.split('@')[0]).join(', ')}_\n`;
+        }
+
+        // Mention newly added reviewers and the owner
+        const mentionsToNotify = [...new Set([
+          ...addedReviewers.map(r => r.email),
+          review.createdBy
+        ])];
+        const mentions = await formatMentions(mentionsToNotify, allowedUsers, webhookUrl, accessToken);
+        if (mentions) {
+          notificationMessage += `\n📢 *Notifying Owner & Newly Added Reviewers:*\n${mentions}\n`;
+        }
+
+        notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
+
+        await sendGoogleChatNotification(webhookUrl, notificationMessage);
+      }
+
+      setIsEditingReviewers(false);
+      setSelectedReviewers(new Set());
+      setReviewerSearchFilter("");
+    } catch (error) {
+      console.error("Error updating reviewers:", error);
+      alert("Error updating reviewers: " + (error instanceof Error ? error.message : "Unknown error"));
+    } finally {
+      setIsLoading(prev => ({ ...prev, updateReviewers: false }));
     }
   };
 
@@ -242,21 +408,145 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
               {review.link}
             </a>
 
-            <div className={`mt-2 md:mt-3 flex flex-wrap gap-1.5 md:gap-2 transition-all duration-300 ${isExpanded ? 'max-h-none' : 'max-h-8 overflow-hidden md:max-h-none'}`}>
-              {review.assignees.map((assignee) => (
-                <span
-                  key={assignee.email}
-                  className={`text-xs px-2 py-0.5 md:py-1 rounded-full border transition-all ${
-                    assignee.status === 'reviewed'
-                      ? 'bg-green-500/30 border-green-400/50 text-green-100 font-semibold shadow-md shadow-green-500/20 ring-1 ring-green-400/30'
-                      : 'bg-white/10 border-white/20 text-white/70'
-                    }`}
-                >
-                  {assignee.email.split('@')[0]}
-                  {assignee.status === 'reviewed' && ' ✓'}
-                </span>
-              ))}
+            {/* Owner information */}
+            <div className="mt-1.5 md:mt-2">
+              <span className="text-xs text-white/50">
+                Owner: <span className="text-white/70 font-medium">{review.createdBy.split('@')[0]}</span>
+              </span>
             </div>
+
+            {/* Reviewers section */}
+            {!isEditingReviewers ? (
+              <>
+                <div className={`mt-2 md:mt-3 flex flex-wrap gap-1.5 md:gap-2 transition-all duration-300 ${isExpanded ? 'max-h-none' : 'max-h-8 overflow-hidden md:max-h-none'}`}>
+                  {review.assignees.map((assignee) => (
+                    <span
+                      key={assignee.email}
+                      className={`text-xs px-2 py-0.5 md:py-1 rounded-full border transition-all ${
+                        assignee.status === 'reviewed'
+                          ? 'bg-green-500/30 border-green-400/50 text-green-100 font-semibold shadow-md shadow-green-500/20 ring-1 ring-green-400/30'
+                          : 'bg-white/10 border-white/20 text-white/70'
+                        }`}
+                    >
+                      {assignee.email.split('@')[0]}
+                      {assignee.status === 'reviewed' && ' ✓'}
+                    </span>
+                  ))}
+                </div>
+                {/* Edit button - show for owners or people in room */}
+                {(isOwner || isInRoom) && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleStartEditReviewers();
+                    }}
+                    className="mt-2 text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                  >
+                    <PencilIcon className="w-3 h-3" />
+                    Edit Reviewers
+                  </button>
+                )}
+              </>
+            ) : (
+              <div className="mt-2 md:mt-3 space-y-2">
+                <div className="text-xs text-white/70 mb-2">Select Reviewers:</div>
+                {/* Search input */}
+                <GlassInput
+                  type="text"
+                  placeholder="Search by name or email..."
+                  value={reviewerSearchFilter}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    setReviewerSearchFilter(e.target.value);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-full text-sm"
+                />
+                <div className="max-h-48 overflow-y-auto space-y-2 p-3 bg-white/5 rounded-xl border border-white/10">
+                  {(() => {
+                    // Include owner in the list if not already in allowedUsers
+                    const ownerInList = allowedUsers.some(u => u.email === review.createdBy);
+                    const allSelectableUsers = ownerInList
+                      ? allowedUsers
+                      : [...allowedUsers, { email: review.createdBy, googleChatUserId: undefined }];
+
+                    // Filter users based on search term
+                    const searchTerm = reviewerSearchFilter.toLowerCase().trim();
+                    const filteredUsers = searchTerm
+                      ? allSelectableUsers.filter(user => {
+                          const name = user.email.split('@')[0].toLowerCase();
+                          const email = user.email.toLowerCase();
+                          return name.includes(searchTerm) || email.includes(searchTerm);
+                        })
+                      : allSelectableUsers;
+
+                    if (allSelectableUsers.length === 0) {
+                      return <div className="text-xs text-white/50 italic">No users available</div>;
+                    }
+
+                    if (filteredUsers.length === 0) {
+                      return <div className="text-xs text-white/50 italic">No users match "{reviewerSearchFilter}"</div>;
+                    }
+
+                    return filteredUsers.map((user) => {
+                      const isSelected = selectedReviewers.has(user.email);
+                      const existingAssignee = review.assignees.find(a => a.email === user.email);
+                      const isReviewed = existingAssignee?.status === 'reviewed';
+                      const isOwner = user.email === review.createdBy;
+
+                      return (
+                        <label
+                          key={user.email}
+                          className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleReviewer(user.email)}
+                            className="w-4 h-4 rounded border-white/20 bg-white/10 text-blue-500 focus:ring-blue-500"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm text-white">
+                              {user.email.split('@')[0]}
+                              {isOwner && <span className="text-xs text-blue-400 ml-1">(Owner)</span>}
+                            </div>
+                            <div className="text-xs text-white/60 truncate">{user.email}</div>
+                          </div>
+                          {isReviewed && (
+                            <span className="text-xs text-green-400">Reviewed</span>
+                          )}
+                        </label>
+                      );
+                    });
+                  })()}
+                </div>
+                <div className="flex gap-2">
+                  <GlassButton
+                    variant="ghost"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCancelEditReviewers();
+                    }}
+                    className="flex-1 text-xs px-3! py-2!"
+                  >
+                    <XMarkIcon className="w-3.5 h-3.5 mr-1" />
+                    Cancel
+                  </GlassButton>
+                  <GlassButton
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSaveReviewers();
+                    }}
+                    isLoading={isLoading.updateReviewers}
+                    className="flex-1 text-xs px-3! py-2!"
+                  >
+                    <CheckIcon className="w-3.5 h-3.5 mr-1" />
+                    Save
+                  </GlassButton>
+                </div>
+              </div>
+            )}
 
             {/* Mobile expand/collapse button for assignees */}
             {review.assignees.length > 2 && (
