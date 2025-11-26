@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getRoom, Room, Review } from "@/lib/db";
@@ -88,6 +88,7 @@ export default function RoomPage() {
   const [isUpdatedSectionExpanded, setIsUpdatedSectionExpanded] = useState(true);
   const [isAllSectionExpanded, setIsAllSectionExpanded] = useState(true);
   const [isCheckingAccess, setIsCheckingAccess] = useState(false);
+  const [selectedFilter, setSelectedFilter] = useState<"all" | "forYou" | "createdByYou">("all");
 
   useEffect(() => {
     if (authLoading) return;
@@ -151,6 +152,22 @@ export default function RoomPage() {
 
     fetchRoom();
   }, [slug, user, authLoading, router]);
+
+  const forYouReviews = useMemo(() => {
+    return reviews.filter(r => r.assignees.some(a => a.email === user?.email));
+  }, [reviews, user]);
+
+  const createdByYouReviews = useMemo(() => {
+    return reviews.filter(r => r.createdBy === user?.email);
+  }, [reviews, user]);
+
+  const filteredReviews = useMemo(() => {
+    switch (selectedFilter) {
+      case "forYou": return forYouReviews;
+      case "createdByYou": return createdByYouReviews;
+      default: return reviews;
+    }
+  }, [reviews, selectedFilter, forYouReviews, createdByYouReviews]);
 
   if (loading || authLoading) {
     return (
@@ -334,27 +351,48 @@ export default function RoomPage() {
           )}
 
           <section>
-            <button
-              onClick={() => setIsAllSectionExpanded(!isAllSectionExpanded)}
-              className="w-full flex items-center justify-between text-left mb-3 md:mb-4 pl-2 border-l-4 border-white/20 hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors"
-            >
-              <h2 className="text-lg md:text-xl font-semibold text-white">
-                All Active Reviews
-                <span className="text-sm font-normal text-white/50 ml-2">({reviews.length})</span>
-              </h2>
-              {isAllSectionExpanded ? (
-                <ChevronUpIcon className="w-5 h-5 text-white/50 shrink-0 ml-2" />
-              ) : (
-                <ChevronDownIcon className="w-5 h-5 text-white/50 shrink-0 ml-2" />
-              )}
-            </button>
+            <div className="flex items-center justify-between mb-3 md:mb-4">
+              <div className="flex gap-6">
+                <button
+                  onClick={() => setSelectedFilter("all")}
+                  className={`px-4 text-lg md:text-xl font-semibold cursor-pointer text-white hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors ${selectedFilter === "all" ? "bg-white/5" : ""}`}
+                >
+                  All Active Reviews
+                  <span className="text-sm font-normal text-white/50 ml-2">({reviews.length})</span>
+                </button>
+                <button
+                  onClick={() => setSelectedFilter("forYou")}
+                  className={`px-4 text-lg md:text-xl font-semibold cursor-pointer text-white hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors ${selectedFilter === "forYou" ? "bg-white/5" : ""}`}
+                >
+                  For You
+                  <span className="text-sm font-normal text-white/50 ml-2">({forYouReviews.length})</span>
+                </button>
+                <button
+                  onClick={() => setSelectedFilter("createdByYou")}
+                  className={`px-4 text-lg md:text-xl font-semibold cursor-pointer text-white hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors ${selectedFilter === "createdByYou" ? "bg-white/5" : ""}`}
+                >
+                  Created by You
+                  <span className="text-sm font-normal text-white/50 ml-2">({createdByYouReviews.length})</span>
+                </button>
+              </div>
+              <button
+                onClick={() => setIsAllSectionExpanded(!isAllSectionExpanded)}
+                className="flex items-center justify-between text-left border-l-4 border-white/20 hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors"
+              >
+                {isAllSectionExpanded ? (
+                  <ChevronUpIcon className="w-5 h-5 text-white/50 shrink-0" />
+                ) : (
+                  <ChevronDownIcon className="w-5 h-5 text-white/50 shrink-0" />
+                )}
+              </button>
+            </div>
             <div className={`transition-all duration-300 ease-in-out ${
               isAllSectionExpanded ? 'max-h-[10000px] opacity-100' : 'max-h-0 overflow-hidden opacity-0'
             }`}>
-              {reviews.length === 0 ? (
+              {filteredReviews.length === 0 ? (
                 <p className="text-white/50 italic">No active reviews.</p>
               ) : (
-                reviews.map(review => (
+                filteredReviews.map(review => (
                   <ReviewItem
                     key={review.id}
                     review={review}
