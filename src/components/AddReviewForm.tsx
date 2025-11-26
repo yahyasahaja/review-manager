@@ -62,7 +62,7 @@ export function AddReviewForm({ room, onSuccess }: AddReviewFormProps) {
 
       notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
 
-      await sendGoogleChatNotification(room.webhookUrl, notificationMessage);
+      await sendGoogleChatNotification(room.webhookUrl, notificationMessage, reviewId);
     }
 
     setTitle("");
