@@ -20,11 +20,34 @@ const checkDb = () => {
   return db;
 };
 
+/**
+ * Clean allowedUsers array to remove undefined googleChatUserId fields
+ * Firestore doesn't allow undefined values in documents
+ */
+function cleanAllowedUsers(users: { email: string; googleChatUserId?: string }[]): { email: string; googleChatUserId?: string }[] {
+  return users.map(user => {
+    const cleaned: { email: string; googleChatUserId?: string } = { email: user.email };
+    if (user.googleChatUserId !== undefined && user.googleChatUserId !== null && user.googleChatUserId.trim() !== '') {
+      cleaned.googleChatUserId = user.googleChatUserId;
+    }
+    return cleaned;
+  });
+}
+
+/**
+ * Extract email addresses from allowedUsers array for Firestore rules
+ * This creates a simple string array that can be checked with hasAny()
+ */
+function extractAllowedUserEmails(users: { email: string; googleChatUserId?: string }[]): string[] {
+  return users.map(user => user.email.toLowerCase());
+}
+
 export interface Room {
   slug: string;
   name: string;
   webhookUrl: string;
   allowedUsers: { email: string; googleChatUserId?: string }[];
+  allowedUserEmails?: string[]; // Helper field for Firestore rules (array of email strings)
   createdBy: string;
   createdAt: Timestamp;
 }
@@ -53,6 +76,8 @@ export async function createRoom(data: Omit<Room, "createdAt">) {
 
   await setDoc(roomRef, {
     ...data,
+    allowedUsers: cleanAllowedUsers(data.allowedUsers),
+    allowedUserEmails: extractAllowedUserEmails(data.allowedUsers),
     createdAt: serverTimestamp(),
   });
 }
@@ -102,7 +127,15 @@ export async function updateRoom(slug: string, updates: Partial<Omit<Room, "slug
     throw new Error("Room not found");
   }
 
-  await updateDoc(roomRef, updates);
+  // Clean allowedUsers if it's being updated
+  const cleanedUpdates = { ...updates };
+  if (updates.allowedUsers) {
+    cleanedUpdates.allowedUsers = cleanAllowedUsers(updates.allowedUsers);
+    // Also update the helper field for Firestore rules
+    cleanedUpdates.allowedUserEmails = extractAllowedUserEmails(cleanedUpdates.allowedUsers);
+  }
+
+  await updateDoc(roomRef, cleanedUpdates);
 }
 
 export async function addReview(roomId: string, data: Omit<Review, "id" | "roomId" | "createdAt" | "updatedAt" | "status">) {
