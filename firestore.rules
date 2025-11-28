@@ -19,16 +19,6 @@ service cloud.firestore {
              allowedUserEmails.hasAny([getUserEmail()]);
     }
 
-    // Helper function to check if user is in the same room as a review
-    function isInSameRoom(roomId) {
-      let room = get(/databases/$(database)/documents/rooms/$(roomId));
-      return room != null &&
-             room.data != null &&
-             (room.data.createdBy == getUserEmail() ||
-              (room.data.allowedUserEmails != null &&
-               isInAllowedUsers(room.data.allowedUserEmails)));
-    }
-
     // Rooms collection
     match /rooms/{roomId} {
       // Allow authenticated users to create rooms (must be the creator)
@@ -51,29 +41,21 @@ service cloud.firestore {
 
     // Reviews collection
     match /reviews/{reviewId} {
-      // Allow create if user is authenticated and is in the room
+      // Allow create if user is authenticated
       allow create: if isAuthenticated() &&
-                       request.resource.data.createdBy == getUserEmail() &&
-                       isInSameRoom(request.resource.data.roomId);
+                       request.resource.data.createdBy == getUserEmail();
 
-      // Allow read if user is authenticated and is in the room
-      allow read: if isAuthenticated() &&
-                     isInSameRoom(resource.data.roomId);
+      // Allow read if user is authenticated
+      // Application code will filter by room access
+      allow read: if isAuthenticated();
 
-      // Allow update if user is:
-      // - Review creator, OR
-      // - In the same room (room creator or in allowedUsers)
-      // Note: Assignee checks are handled at application level
-      allow update: if isAuthenticated() &&
-                       (resource.data.createdBy == getUserEmail() ||
-                        isInSameRoom(resource.data.roomId));
+      // Allow update if user is authenticated
+      // Application code will check if user is creator or assignee
+      allow update: if isAuthenticated();
 
-      // Allow delete if user is:
-      // - Review creator, OR
-      // - In the same room (room creator or in allowedUsers)
+      // Allow delete if user is creator
       allow delete: if isAuthenticated() &&
-                       (resource.data.createdBy == getUserEmail() ||
-                        isInSameRoom(resource.data.roomId));
+                       resource.data.createdBy == getUserEmail();
     }
   }
 }
