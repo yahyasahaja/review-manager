@@ -7,8 +7,16 @@ service cloud.firestore {
     }
 
     // Helper function to get user email
+    // Note: Application code stores emails in lowercase, so comparison should work
     function getUserEmail() {
       return request.auth.token.email;
+    }
+
+    // Helper function to check if user is in allowedUserEmails array
+    function isInAllowedUsers(allowedUserEmails) {
+      return allowedUserEmails != null && 
+             allowedUserEmails.size() > 0 &&
+             allowedUserEmails.hasAny([getUserEmail()]);
     }
 
     // Rooms collection
@@ -21,9 +29,10 @@ service cloud.firestore {
       // Application code will check if user is in allowedUsers
       allow read: if isAuthenticated();
 
-      // Allow update if user is creator
+      // Allow update if user is creator OR in allowedUserEmails
       allow update: if isAuthenticated() &&
-                       resource.data.createdBy == getUserEmail();
+                       (resource.data.createdBy == getUserEmail() ||
+                        isInAllowedUsers(resource.data.allowedUserEmails));
 
       // Allow delete if user is creator
       allow delete: if isAuthenticated() &&
