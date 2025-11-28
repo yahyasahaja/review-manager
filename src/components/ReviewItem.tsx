@@ -45,14 +45,15 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
 
     setIsLoading(prev => ({ ...prev, markDone: true }));
     try {
+      // Get reviewers info BEFORE updating status (to avoid stale data)
+      const reviewers = review.assignees.filter(a => a.status === 'reviewed');
+
       await updateReviewStatus(review.id, "done");
 
+      // Send notification after status update (same pattern as handleApprove)
       if (webhookUrl) {
         const accessToken = await getAccessToken();
         const roomUrl = getRoomUrl(review.roomId);
-
-        // Get reviewers who reviewed
-        const reviewers = review.assignees.filter(a => a.status === 'reviewed');
 
         // Format owner mention
         const ownerMention = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
@@ -65,11 +66,13 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
         }
 
         let notificationMessage = `✅ *Review Done:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* ${ownerMention}${reviewersMention}\n`;
-
         notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
 
         await sendGoogleChatNotification(webhookUrl, notificationMessage, review.id);
       }
+    } catch (error) {
+      console.error("Error marking review as done:", error);
+      alert("Error marking review as done: " + (error instanceof Error ? error.message : "Unknown error"));
     } finally {
       setIsLoading(prev => ({ ...prev, markDone: false }));
     }
@@ -82,6 +85,33 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
     setIsLoading(prev => ({ ...prev, delete: true }));
     try {
       await updateReviewStatus(review.id, "deleted");
+
+      // Send notification
+      if (webhookUrl) {
+        const accessToken = await getAccessToken();
+        const roomUrl = getRoomUrl(review.roomId);
+
+        // Format owner mention
+        const ownerMention = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
+
+        // Get reviewers who reviewed
+        const reviewers = review.assignees.filter(a => a.status === 'reviewed');
+
+        // Format reviewers mentions
+        let reviewersMention = '';
+        if (reviewers.length > 0) {
+          const reviewerMentions = await formatMentions(reviewers.map(r => r.email), allowedUsers, webhookUrl, accessToken);
+          reviewersMention = `\n👥 *Reviewers:* ${reviewerMentions} (${reviewers.length} reviewed)`;
+        }
+
+        let notificationMessage = `🗑️ *Review Deleted:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* ${ownerMention}${reviewersMention}\n`;
+        notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
+
+        await sendGoogleChatNotification(webhookUrl, notificationMessage, review.id);
+      }
+    } catch (error) {
+      console.error("Error deleting review:", error);
+      alert("Error deleting review: " + (error instanceof Error ? error.message : "Unknown error"));
     } finally {
       setIsLoading(prev => ({ ...prev, delete: false }));
     }
