@@ -68,7 +68,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
 
         notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
 
-        await sendGoogleChatNotification(webhookUrl, notificationMessage);
+        await sendGoogleChatNotification(webhookUrl, notificationMessage, review.id);
       }
     } finally {
       setIsLoading(prev => ({ ...prev, markDone: false }));
@@ -119,7 +119,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
 
         notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
 
-        await sendGoogleChatNotification(webhookUrl, notificationMessage);
+        await sendGoogleChatNotification(webhookUrl, notificationMessage, review.id);
       }
     } finally {
       setIsLoading(prev => ({ ...prev, markUpdated: false }));
@@ -190,7 +190,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
 
       notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
 
-      await sendGoogleChatNotification(webhookUrl, notificationMessage);
+      await sendGoogleChatNotification(webhookUrl, notificationMessage, review.id);
       alert("Ping sent to Google Chat!");
     } finally {
       setIsLoading(prev => ({ ...prev, ping: false }));
@@ -230,7 +230,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
 
         notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
 
-        await sendGoogleChatNotification(webhookUrl, notificationMessage);
+        await sendGoogleChatNotification(webhookUrl, notificationMessage, review.id);
       }
     } finally {
       setIsLoading(prev => ({ ...prev, markReviewed: false }));
@@ -270,7 +270,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
 
         notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
 
-        await sendGoogleChatNotification(webhookUrl, notificationMessage);
+        await sendGoogleChatNotification(webhookUrl, notificationMessage, review.id);
       }
 
       // If marked as done, also send the done notification
@@ -282,7 +282,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
         let notificationMessage = `✅ *Review Done:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* ${ownerMention}\n`;
         notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
 
-        await sendGoogleChatNotification(webhookUrl, notificationMessage);
+        await sendGoogleChatNotification(webhookUrl, notificationMessage, review.id);
       }
     } finally {
       setIsLoading(prev => ({ ...prev, approve: false }));
@@ -369,7 +369,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
 
         notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
 
-        await sendGoogleChatNotification(webhookUrl, notificationMessage);
+        await sendGoogleChatNotification(webhookUrl, notificationMessage, review.id);
       }
 
       setIsEditingReviewers(false);

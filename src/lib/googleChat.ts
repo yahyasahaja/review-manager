@@ -186,7 +186,7 @@ export async function fetchGoogleChatMembers(webhookUrl: string, accessToken?: s
   }
 }
 
-export async function sendGoogleChatNotification(webhookUrl: string, message: string) {
+export async function sendGoogleChatNotification(webhookUrl: string, message: string, threadKey?: string) {
   if (!webhookUrl) return;
 
   try {
@@ -212,6 +212,7 @@ export async function sendGoogleChatNotification(webhookUrl: string, message: st
       body: JSON.stringify({
         webhookUrl,
         text: message,
+        threadKey,
       }),
     });
   } catch (error) {
