@@ -44,7 +44,6 @@ export function AddReviewForm({ room, onSuccess }: AddReviewFormProps) {
       link: normalizedLink,
       createdBy: user.email || "",
       assignees,
-      mentions,
     });
 
     if (room.webhookUrl) {

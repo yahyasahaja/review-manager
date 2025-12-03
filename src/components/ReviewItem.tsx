@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { Review, updateReviewStatus, markAsReviewed, markReviewAsUpdated, updateReviewAssignees, removeReviewer } from "@/lib/db";
+import { Review, updateReviewStatus, markAsReviewed, markAsApproved, markReviewAsUpdated, updateReviewAssignees } from "@/lib/db";
 import { GlassCard } from "./ui/GlassCard";
 import { GlassButton } from "./ui/GlassButton";
 import { GlassInput } from "./ui/GlassInput";
 import { useAuth } from "@/context/AuthContext";
-import { CheckCircleIcon, TrashIcon, BellIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, PencilIcon, XMarkIcon, CheckIcon, HandThumbUpIcon } from "@heroicons/react/24/outline";
+import { CheckCircleIcon, TrashIcon, BellIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, PencilIcon, XMarkIcon, CheckIcon, HandThumbUpIcon, ClipboardDocumentCheckIcon } from "@heroicons/react/24/outline";
 import { sendGoogleChatNotification, formatMentions } from "@/lib/googleChat";
 import { getRoomUrl, formatRelativeTime, formatTimeSince, formatExactDateTime } from "@/lib/utils";
 
@@ -240,8 +240,10 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
         const accessToken = await getAccessToken();
         const roomUrl = getRoomUrl(review.roomId);
 
-        // Get all reviewers info
-        const allReviewers = review.assignees.filter(a => a.status === 'reviewed');
+        // Calculate updated reviewedBy list
+        const updatedReviewedBy = review.reviewedBy?.includes(user.email)
+          ? review.reviewedBy
+          : [...(review.reviewedBy || []), user.email];
 
         // Format owner mention
         const ownerMention = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
@@ -249,14 +251,14 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
         // Format reviewer mention (the person who just reviewed)
         const reviewerMention = await formatMentions([user.email], allowedUsers, webhookUrl, accessToken);
 
-        // Format all reviewers mentions
-        let reviewersMention = '';
-        if (allReviewers.length > 0) {
-          const reviewerMentions = await formatMentions(allReviewers.map(r => r.email), allowedUsers, webhookUrl, accessToken);
-          reviewersMention = `\n👥 *Reviewers:* ${reviewerMentions} (${allReviewers.length} reviewed)`;
+        // Format all reviewed by mentions
+        let reviewedByMention = '';
+        if (updatedReviewedBy.length > 0) {
+          const reviewedByMentions = await formatMentions(updatedReviewedBy, allowedUsers, webhookUrl, accessToken);
+          reviewedByMention = `\n✅ *Reviewed by:* ${reviewedByMentions} (${updatedReviewedBy.length})`;
         }
 
-        let notificationMessage = `✅ *Review Marked as Reviewed:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* ${ownerMention}\n✅ *Reviewed by:* ${reviewerMention}${reviewersMention}\n`;
+        let notificationMessage = `✅ *Review Marked as Reviewed:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* ${ownerMention}${reviewedByMention}\n`;
 
         notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
 
@@ -273,11 +275,27 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
 
     setIsLoading(prev => ({ ...prev, approve: true }));
     try {
-      // Remove the reviewer from the list
-      const noReviewersLeft = await removeReviewer(review.id, user.email);
+      // Mark the reviewer as reviewed (keep them in the assignees list)
+      await markAsReviewed(review.id, user.email);
+      // Also mark as approved
+      await markAsApproved(review.id, user.email);
 
-      // If no reviewers left, mark as done
-      if (noReviewersLeft) {
+      // Calculate updated assignees after marking as reviewed
+      const updatedAssignees = review.assignees.map(a =>
+        a.email === user.email ? { ...a, status: "reviewed" as const } : a
+      );
+
+      // Calculate updated approvedBy list
+      const updatedApprovedBy = review.approvedBy?.includes(user.email)
+        ? review.approvedBy
+        : [...(review.approvedBy || []), user.email];
+
+      // Check if all reviewers have reviewed
+      const allReviewersReviewed = updatedAssignees.length > 0 &&
+        updatedAssignees.every(a => a.status === 'reviewed');
+
+      // If all reviewers reviewed, mark as done
+      if (allReviewersReviewed) {
         await updateReviewStatus(review.id, "done");
       }
 
@@ -292,9 +310,26 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
         // Format approver mention
         const approverMention = await formatMentions([user.email], allowedUsers, webhookUrl, accessToken);
 
-        let notificationMessage = `👍 *Review Approved:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* ${ownerMention}\n👍 *Approved by:* ${approverMention}\n`;
+        // Format all approved by mentions
+        let approvedByMention = '';
+        if (updatedApprovedBy.length > 0) {
+          const approvedByMentions = await formatMentions(updatedApprovedBy, allowedUsers, webhookUrl, accessToken);
+          approvedByMention = `\n👍 *Approved by:* ${approvedByMentions} (${updatedApprovedBy.length})`;
+        }
 
-        if (noReviewersLeft) {
+        // Format all reviewed by mentions
+        const updatedReviewedBy = review.reviewedBy?.includes(user.email)
+          ? review.reviewedBy
+          : [...(review.reviewedBy || []), user.email];
+        let reviewedByMention = '';
+        if (updatedReviewedBy.length > 0) {
+          const reviewedByMentions = await formatMentions(updatedReviewedBy, allowedUsers, webhookUrl, accessToken);
+          reviewedByMention = `\n✅ *Reviewed by:* ${reviewedByMentions} (${updatedReviewedBy.length})`;
+        }
+
+        let notificationMessage = `👍 *Review Approved:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* ${ownerMention}${approvedByMention}${reviewedByMention}\n`;
+
+        if (allReviewersReviewed) {
           notificationMessage += `\n✅ *All reviewers approved - Review marked as Done*\n`;
         }
 
@@ -304,12 +339,30 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
       }
 
       // If marked as done, also send the done notification
-      if (noReviewersLeft && webhookUrl) {
+      if (allReviewersReviewed && webhookUrl) {
         const accessToken = await getAccessToken();
         const roomUrl = getRoomUrl(review.roomId);
         const ownerMention = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
 
-        let notificationMessage = `✅ *Review Done:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* ${ownerMention}\n`;
+        // Get all reviewers who reviewed
+        const reviewers = updatedAssignees.filter(a => a.status === 'reviewed');
+        let reviewersMention = '';
+        if (reviewers.length > 0) {
+          const reviewerMentions = await formatMentions(reviewers.map(r => r.email), allowedUsers, webhookUrl, accessToken);
+          reviewersMention = `\n👥 *Reviewers:* ${reviewerMentions} (${reviewers.length} reviewed)`;
+        }
+
+        // Format approved by
+        const updatedApprovedBy = review.approvedBy?.includes(user.email)
+          ? review.approvedBy
+          : [...(review.approvedBy || []), user.email];
+        let approvedByMention = '';
+        if (updatedApprovedBy.length > 0) {
+          const approvedByMentions = await formatMentions(updatedApprovedBy, allowedUsers, webhookUrl, accessToken);
+          approvedByMention = `\n👍 *Approved by:* ${approvedByMentions} (${updatedApprovedBy.length})`;
+        }
+
+        let notificationMessage = `✅ *Review Done:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* ${ownerMention}${reviewersMention}${approvedByMention}\n`;
         notificationMessage += `\n📋 View in Review Queue: ${roomUrl}`;
 
         await sendGoogleChatNotification(webhookUrl, notificationMessage, review.id);
@@ -499,21 +552,51 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
             {/* Reviewers section */}
             {!isEditingReviewers ? (
               <>
-                <div className={`mt-2 md:mt-3 flex flex-wrap gap-1.5 md:gap-2 transition-all duration-300 ${isExpanded ? 'max-h-none' : 'max-h-8 overflow-hidden md:max-h-none'}`}>
-                  {review.assignees.map((assignee) => (
-                    <span
-                      key={assignee.email}
-                      className={`text-xs px-2 py-0.5 md:py-1 rounded-full border transition-all ${
-                        assignee.status === 'reviewed'
-                          ? 'bg-green-500/30 border-green-400/50 text-green-100 font-semibold shadow-md shadow-green-500/20 ring-1 ring-green-400/30'
-                          : 'bg-white/10 border-white/20 text-white/70'
-                        }`}
-                    >
-                      {assignee.email.split('@')[0]}
-                      {assignee.status === 'reviewed' && ' ✓'}
-                    </span>
-                  ))}
+                {/* Assigned Reviewers */}
+                <div className="mt-2 md:mt-3">
+                  <div className="text-xs text-white/50 mb-1.5">Assigned Reviewers:</div>
+                  <div className={`flex flex-wrap gap-1.5 md:gap-2 transition-all duration-300 ${isExpanded ? 'max-h-none' : 'max-h-8 overflow-hidden md:max-h-none'}`}>
+                    {review.assignees.length > 0 ? (
+                      review.assignees.map((assignee) => {
+                        const isApproved = review.approvedBy?.includes(assignee.email) || false;
+                        const isReviewed = review.reviewedBy?.includes(assignee.email) || false;
+
+                        let capsuleClass = 'bg-white/10 border-white/20 text-white/70';
+                        let icon = null;
+
+                        if (isApproved) {
+                          // Approved: green capsule with thumbs up icon
+                          capsuleClass = 'bg-green-500/30 border-green-400/50 text-green-100 font-semibold shadow-md shadow-green-500/20 ring-1 ring-green-400/30';
+                          icon = <HandThumbUpIcon className="w-4 h-4 inline-block ml-1" />;
+                        } else if (isReviewed) {
+                          // Reviewed: blue capsule with checklist icon (indicates concerns/comments)
+                          capsuleClass = 'bg-blue-500/30 border-blue-400/50 text-blue-100 font-semibold shadow-md shadow-blue-500/20 ring-1 ring-blue-400/30';
+                          icon = <ClipboardDocumentCheckIcon className="w-4 h-4 inline-block ml-1" />;
+                        }
+
+                        return (
+                          <div key={assignee.email} className="flex flex-col items-center gap-0.5">
+                            <span
+                              className={`text-xs px-2 py-0.5 md:py-1 rounded-full border transition-all flex items-center gap-1 ${capsuleClass}`}
+                            >
+                              {assignee.email.split('@')[0]}
+                              {icon}
+                            </span>
+                            {isApproved && (
+                              <span className="text-[10px] text-white/40 font-normal">approved</span>
+                            )}
+                            {!isApproved && isReviewed && (
+                              <span className="text-[10px] text-white/40 font-normal">reviewed</span>
+                            )}
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <span className="text-xs text-white/40 italic">No reviewers assigned</span>
+                    )}
+                  </div>
                 </div>
+
                 {/* Edit button - show for owners or people in room */}
                 {(isOwner || isInRoom) && (
                   <button

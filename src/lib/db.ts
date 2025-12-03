@@ -62,7 +62,8 @@ export interface Review {
   createdAt: Timestamp;
   updatedAt: Timestamp;
   assignees: { email: string; status: "pending" | "reviewed" }[];
-  mentions: string[];
+  reviewedBy: string[]; // List of users who have marked as reviewed
+  approvedBy: string[]; // List of users who have approved
 }
 
 export async function createRoom(data: Omit<Room, "createdAt">) {
@@ -138,13 +139,15 @@ export async function updateRoom(slug: string, updates: Partial<Omit<Room, "slug
   await updateDoc(roomRef, cleanedUpdates);
 }
 
-export async function addReview(roomId: string, data: Omit<Review, "id" | "roomId" | "createdAt" | "updatedAt" | "status">) {
+export async function addReview(roomId: string, data: Omit<Review, "id" | "roomId" | "createdAt" | "updatedAt" | "status" | "reviewedBy" | "approvedBy">) {
   const firestore = checkDb();
   const reviewsRef = collection(firestore, "reviews");
   const docRef = await addDoc(reviewsRef, {
     ...data,
     roomId,
     status: "active",
+    reviewedBy: [], // Initialize empty array
+    approvedBy: [], // Initialize empty array
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -296,8 +299,36 @@ export async function markAsReviewed(reviewId: string, userEmail: string) {
     a.email === userEmail ? { ...a, status: "reviewed" } : a
   );
 
+  // Add user to reviewedBy list if not already present
+  const reviewedBy = review.reviewedBy || [];
+  const updatedReviewedBy = reviewedBy.includes(userEmail)
+    ? reviewedBy
+    : [...reviewedBy, userEmail];
+
   await updateDoc(reviewRef, {
     assignees: updatedAssignees,
+    reviewedBy: updatedReviewedBy,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function markAsApproved(reviewId: string, userEmail: string) {
+  const firestore = checkDb();
+  const reviewRef = doc(firestore, "reviews", reviewId);
+  const reviewSnap = await getDoc(reviewRef);
+
+  if (!reviewSnap.exists()) return;
+
+  const review = reviewSnap.data() as Review;
+
+  // Add user to approvedBy list if not already present
+  const approvedBy = review.approvedBy || [];
+  const updatedApprovedBy = approvedBy.includes(userEmail)
+    ? approvedBy
+    : [...approvedBy, userEmail];
+
+  await updateDoc(reviewRef, {
+    approvedBy: updatedApprovedBy,
     updatedAt: serverTimestamp(),
   });
 }
