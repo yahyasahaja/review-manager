@@ -54,8 +54,8 @@ service cloud.firestore {
       allow update: if isAuthenticated();
 
       // Allow delete if user is authenticated
-      // ponytail: any room member can already soft-delete via update, and the
-      // done/deleted queue trim hard-deletes other people's old reviews
+      // The done/deleted queue trim hard-deletes other people's old reviews,
+      // and any room member can already soft-delete via update
       allow delete: if isAuthenticated();
     }
   }
