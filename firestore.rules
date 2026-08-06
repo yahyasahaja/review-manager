@@ -53,9 +53,10 @@ service cloud.firestore {
       // Application code will check if user is creator or assignee
       allow update: if isAuthenticated();
 
-      // Allow delete if user is creator
-      allow delete: if isAuthenticated() &&
-                       resource.data.createdBy == getUserEmail();
+      // Allow delete if user is authenticated
+      // The done/deleted queue trim hard-deletes other people's old reviews,
+      // and any room member can already soft-delete via update
+      allow delete: if isAuthenticated();
     }
   }
 }
