@@ -153,8 +153,12 @@ export default function RoomPage() {
     fetchRoom();
   }, [slug, user, authLoading, router]);
 
+  // Only reviews still waiting on you: drop the ones you already reviewed or approved
   const forYouReviews = useMemo(() => {
-    return reviews.filter(r => r.assignees.some(a => a.email === user?.email));
+    return reviews.filter(r =>
+      r.assignees.some(a => a.email === user?.email && a.status === "pending") &&
+      !r.approvedBy?.includes(user?.email ?? "")
+    );
   }, [reviews, user]);
 
   const createdByYouReviews = useMemo(() => {

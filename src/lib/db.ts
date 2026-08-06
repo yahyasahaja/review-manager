@@ -283,6 +283,9 @@ export async function markReviewAsUpdated(reviewId: string) {
 
   await updateDoc(reviewRef, {
     assignees: resetAssignees,
+    // Clear past verdicts too, otherwise the review stays hidden from "For You"
+    reviewedBy: [],
+    approvedBy: [],
     updatedAt: serverTimestamp(),
   });
 }
