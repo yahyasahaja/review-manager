@@ -133,7 +133,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
         const roomUrl = getRoomUrl(review.roomId);
 
         // Get reviewers info - these are the reviewers who had reviewed before the update
-        // (they will be reset to pending after markReviewAsUpdated is called)
+        // (non-approvers will be reset to pending after markReviewAsUpdated is called)
 
         // Format owner mention
         const ownerMention = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
