@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Review, updateReviewStatus, markAsReviewed, markAsApproved, markReviewAsUpdated, updateReviewAssignees } from "@/lib/db";
+import { Review, updateReviewStatus, markAsReviewed, markAsApproved, markReviewAsUpdated, updateReviewAssignees, updateReviewTitle } from "@/lib/db";
 import { GlassCard } from "./ui/GlassCard";
 import { GlassButton } from "./ui/GlassButton";
 import { GlassInput } from "./ui/GlassInput";
@@ -25,6 +25,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
   const [isEditingReviewers, setIsEditingReviewers] = useState(false);
   const [selectedReviewers, setSelectedReviewers] = useState<Set<string>>(new Set());
   const [reviewerSearchFilter, setReviewerSearchFilter] = useState("");
+  const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState({
     markDone: false,
     markUpdated: false,
@@ -466,6 +467,21 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
     }
   };
 
+  const handleSaveTitle = async () => {
+    const title = editingTitle?.trim();
+    if (!title || title === review.title) {
+      setEditingTitle(null);
+      return;
+    }
+    try {
+      await updateReviewTitle(review.id, title);
+      setEditingTitle(null);
+    } catch (error) {
+      console.error("Error updating title:", error);
+      alert("Error updating title: " + (error instanceof Error ? error.message : "Unknown error"));
+    }
+  };
+
   const isAssigned = review.assignees.some(a => a.email === userEmail);
   const myStatus = review.assignees.find(a => a.email === userEmail)?.status;
   const isReviewer = isAssigned && myStatus === 'pending';
@@ -516,8 +532,40 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
           <div className="flex-1 min-w-0 pr-2">
             <div className="flex items-start justify-between gap-2 mb-1">
               <div className="flex-1 min-w-0">
-                {/* eslint-disable-next-line -- Acknowledged: break-words is correct, not wrap-break-word */}
-                <h3 className="text-base md:text-lg font-bold break-words">{review.title}</h3>
+                {editingTitle !== null ? (
+                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                    <GlassInput
+                      autoFocus
+                      value={editingTitle}
+                      onChange={(e) => setEditingTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleSaveTitle();
+                        if (e.key === "Escape") setEditingTitle(null);
+                      }}
+                      className="text-sm py-1"
+                    />
+                    <button onClick={handleSaveTitle} className="p-1 text-green-300 hover:text-green-200" title="Save title">
+                      <CheckIcon className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => setEditingTitle(null)} className="p-1 text-white/60 hover:text-white" title="Cancel">
+                      <XMarkIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-1.5">
+                    {/* eslint-disable-next-line -- Acknowledged: break-words is correct, not wrap-break-word */}
+                    <h3 className="text-base md:text-lg font-bold break-words">{review.title}</h3>
+                    {isOwner && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setEditingTitle(review.title); }}
+                        className="p-1 mt-0.5 text-white/40 hover:text-white shrink-0"
+                        title="Edit title"
+                      >
+                        <PencilIcon className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
                 <div className="mt-0.5 text-xs text-white/40 font-mono">
                   ID: {review.id}
                 </div>
