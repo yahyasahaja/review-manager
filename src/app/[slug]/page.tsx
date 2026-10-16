@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getRoom, Room, Review } from "@/lib/db";
 import { db } from "@/lib/firebase";
@@ -77,11 +77,14 @@ function SendSummaryButton({ reviews, room, getAccessToken }: { reviews: Review[
 export default function RoomPage() {
   const params = useParams();
   const slug = params.slug as string;
+  // Chat links carry ?review=<id> to open just that review
+  const focusedReviewId = useSearchParams().get("review");
   const { user, loading: authLoading, getAccessToken } = useAuth();
   const router = useRouter();
 
   const [room, setRoom] = useState<Room | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewsLoaded, setReviewsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [isCreatedSectionExpanded, setIsCreatedSectionExpanded] = useState(true);
@@ -95,7 +98,8 @@ export default function RoomPage() {
 
     // If not logged in, redirect to home with return URL
     if (!user) {
-      router.push(`/?returnTo=${encodeURIComponent(slug)}`);
+      // Keep ?review= through login
+      router.push(`/?returnTo=${encodeURIComponent(slug + window.location.search)}`);
       return;
     }
 
@@ -140,6 +144,7 @@ export default function RoomPage() {
             ...doc.data()
           } as Review));
           setReviews(reviewsData);
+          setReviewsLoaded(true);
         });
 
         return () => unsubscribe();
@@ -241,6 +246,7 @@ export default function RoomPage() {
     const updatedAt = r.updatedAt?.toDate();
     return updatedAt && updatedAt <= oneDayAgo;
   });
+  const focusedReview = reviews.find(r => r.id === focusedReviewId);
 
   return (
     <main className="min-h-screen p-3 md:p-8 pb-24">
@@ -264,153 +270,181 @@ export default function RoomPage() {
           </div>
         </header>
 
-        <RoomSettings room={room} onUpdate={async () => {
-          const updatedRoom = await getRoom(slug);
-          if (updatedRoom) {
-            setRoom(updatedRoom);
-          }
-        }} />
-
-        <AddReviewForm room={room} />
-
-        {/* Send Summary Button */}
-        {room.webhookUrl && reviews.length > 0 && (
-          <GlassCard className="mb-6">
-            <SendSummaryButton
-              reviews={reviews}
-              room={room}
-              getAccessToken={getAccessToken}
-            />
-          </GlassCard>
+        {focusedReviewId && (
+          <section>
+            <button
+              onClick={() => router.replace(`/${slug}`)}
+              className="mb-3 md:mb-4 text-sm text-blue-300 hover:text-blue-200"
+            >
+              ← Show all reviews
+            </button>
+            {focusedReview ? (
+              <ReviewItem
+                review={focusedReview}
+                isOwner={focusedReview.createdBy === user?.email}
+                userEmail={user?.email || ""}
+                webhookUrl={room.webhookUrl}
+                allowedUsers={room.allowedUsers}
+                isInRoom={room.allowedUsers.some(u => u.email === user?.email) || room.createdBy === user?.email}
+                defaultActionsExpanded
+              />
+            ) : reviewsLoaded && (
+              <p className="text-white/50 italic">This review is no longer active (done or deleted).</p>
+            )}
+          </section>
         )}
 
-        <div className="space-y-6 md:space-y-8">
-          {createdMoreThan3Days.length > 0 && (
-            <section>
-              <button
-                onClick={() => setIsCreatedSectionExpanded(!isCreatedSectionExpanded)}
-                className="w-full flex items-center justify-between text-left mb-3 md:mb-4 pl-2 border-l-4 border-green-400 hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors"
-              >
-                <h2 className="text-lg md:text-xl font-semibold text-white">
-                  Pending review more than 3 days created
-                  <span className="text-sm font-normal text-white/50 ml-2">({createdMoreThan3Days.length})</span>
-                </h2>
-                {isCreatedSectionExpanded ? (
-                  <ChevronUpIcon className="w-5 h-5 text-white/50 shrink-0 ml-2" />
-                ) : (
-                  <ChevronDownIcon className="w-5 h-5 text-white/50 shrink-0 ml-2" />
-                )}
-              </button>
-              <div className={`transition-all duration-300 ease-in-out ${
-                isCreatedSectionExpanded ? 'max-h-[10000px] opacity-100' : 'max-h-0 overflow-hidden opacity-0'
-              }`}>
-                {createdMoreThan3Days.map(review => (
-                  <ReviewItem
-                    key={review.id}
-                    review={review}
-                    isOwner={review.createdBy === user?.email}
-                    userEmail={user?.email || ""}
-                    webhookUrl={room.webhookUrl}
-                    allowedUsers={room.allowedUsers}
-                    isInRoom={room.allowedUsers.some(u => u.email === user?.email) || room.createdBy === user?.email}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
+        {!focusedReviewId && (
+          <>
+            <RoomSettings room={room} onUpdate={async () => {
+              const updatedRoom = await getRoom(slug);
+              if (updatedRoom) {
+                setRoom(updatedRoom);
+              }
+            }} />
 
-          {updatedMoreThan1Day.length > 0 && (
-            <section>
-              <button
-                onClick={() => setIsUpdatedSectionExpanded(!isUpdatedSectionExpanded)}
-                className="w-full flex items-center justify-between text-left mb-3 md:mb-4 pl-2 border-l-4 border-blue-400 hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors"
-              >
-                <h2 className="text-lg md:text-xl font-semibold text-white">
-                  Pending review more than 1 day since last updated
-                  <span className="text-sm font-normal text-white/50 ml-2">({updatedMoreThan1Day.length})</span>
-                </h2>
-                {isUpdatedSectionExpanded ? (
-                  <ChevronUpIcon className="w-5 h-5 text-white/50 shrink-0 ml-2" />
-                ) : (
-                  <ChevronDownIcon className="w-5 h-5 text-white/50 shrink-0 ml-2" />
-                )}
-              </button>
-              <div className={`transition-all duration-300 ease-in-out ${
-                isUpdatedSectionExpanded ? 'max-h-[10000px] opacity-100' : 'max-h-0 overflow-hidden opacity-0'
-              }`}>
-                {updatedMoreThan1Day.map(review => (
-                  <ReviewItem
-                    key={review.id}
-                    review={review}
-                    isOwner={review.createdBy === user?.email}
-                    userEmail={user?.email || ""}
-                    webhookUrl={room.webhookUrl}
-                    allowedUsers={room.allowedUsers}
-                    isInRoom={room.allowedUsers.some(u => u.email === user?.email) || room.createdBy === user?.email}
-                    showUpdatedTime={true}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
+            <AddReviewForm room={room} />
 
-          <section>
-            <div className="flex items-center justify-between mb-3 md:mb-4">
-              <div className="flex gap-6">
-                <button
-                  onClick={() => setSelectedFilter("all")}
-                  className={`px-4 text-lg md:text-xl font-semibold cursor-pointer text-white hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors ${selectedFilter === "all" ? "bg-white/5" : ""}`}
-                >
-                  All Active Reviews
-                  <span className="text-sm font-normal text-white/50 ml-2">({reviews.length})</span>
-                </button>
-                <button
-                  onClick={() => setSelectedFilter("forYou")}
-                  className={`px-4 text-lg md:text-xl font-semibold cursor-pointer text-white hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors ${selectedFilter === "forYou" ? "bg-white/5" : ""}`}
-                >
-                  For You
-                  <span className="text-sm font-normal text-white/50 ml-2">({forYouReviews.length})</span>
-                </button>
-                <button
-                  onClick={() => setSelectedFilter("createdByYou")}
-                  className={`px-4 text-lg md:text-xl font-semibold cursor-pointer text-white hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors ${selectedFilter === "createdByYou" ? "bg-white/5" : ""}`}
-                >
-                  Created by You
-                  <span className="text-sm font-normal text-white/50 ml-2">({createdByYouReviews.length})</span>
-                </button>
-              </div>
-              <button
-                onClick={() => setIsAllSectionExpanded(!isAllSectionExpanded)}
-                className="flex items-center justify-between text-left border-l-4 border-white/20 hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors"
-              >
-                {isAllSectionExpanded ? (
-                  <ChevronUpIcon className="w-5 h-5 text-white/50 shrink-0" />
-                ) : (
-                  <ChevronDownIcon className="w-5 h-5 text-white/50 shrink-0" />
-                )}
-              </button>
-            </div>
-            <div className={`transition-all duration-300 ease-in-out ${
-              isAllSectionExpanded ? 'max-h-[10000px] opacity-100' : 'max-h-0 overflow-hidden opacity-0'
-            }`}>
-              {filteredReviews.length === 0 ? (
-                <p className="text-white/50 italic">No active reviews.</p>
-              ) : (
-                filteredReviews.map(review => (
-                  <ReviewItem
-                    key={review.id}
-                    review={review}
-                    isOwner={review.createdBy === user?.email}
-                    userEmail={user?.email || ""}
-                    webhookUrl={room.webhookUrl}
-                    allowedUsers={room.allowedUsers}
-                    isInRoom={room.allowedUsers.some(u => u.email === user?.email) || room.createdBy === user?.email}
-                  />
-                ))
+            {/* Send Summary Button */}
+            {room.webhookUrl && reviews.length > 0 && (
+              <GlassCard className="mb-6">
+                <SendSummaryButton
+                  reviews={reviews}
+                  room={room}
+                  getAccessToken={getAccessToken}
+                />
+              </GlassCard>
+            )}
+
+            <div className="space-y-6 md:space-y-8">
+              {createdMoreThan3Days.length > 0 && (
+                <section>
+                  <button
+                    onClick={() => setIsCreatedSectionExpanded(!isCreatedSectionExpanded)}
+                    className="w-full flex items-center justify-between text-left mb-3 md:mb-4 pl-2 border-l-4 border-green-400 hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors"
+                  >
+                    <h2 className="text-lg md:text-xl font-semibold text-white">
+                      Pending review more than 3 days created
+                      <span className="text-sm font-normal text-white/50 ml-2">({createdMoreThan3Days.length})</span>
+                    </h2>
+                    {isCreatedSectionExpanded ? (
+                      <ChevronUpIcon className="w-5 h-5 text-white/50 shrink-0 ml-2" />
+                    ) : (
+                      <ChevronDownIcon className="w-5 h-5 text-white/50 shrink-0 ml-2" />
+                    )}
+                  </button>
+                  <div className={`transition-all duration-300 ease-in-out ${
+                    isCreatedSectionExpanded ? 'max-h-[10000px] opacity-100' : 'max-h-0 overflow-hidden opacity-0'
+                  }`}>
+                    {createdMoreThan3Days.map(review => (
+                      <ReviewItem
+                        key={review.id}
+                        review={review}
+                        isOwner={review.createdBy === user?.email}
+                        userEmail={user?.email || ""}
+                        webhookUrl={room.webhookUrl}
+                        allowedUsers={room.allowedUsers}
+                        isInRoom={room.allowedUsers.some(u => u.email === user?.email) || room.createdBy === user?.email}
+                      />
+                    ))}
+                  </div>
+                </section>
               )}
+
+              {updatedMoreThan1Day.length > 0 && (
+                <section>
+                  <button
+                    onClick={() => setIsUpdatedSectionExpanded(!isUpdatedSectionExpanded)}
+                    className="w-full flex items-center justify-between text-left mb-3 md:mb-4 pl-2 border-l-4 border-blue-400 hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors"
+                  >
+                    <h2 className="text-lg md:text-xl font-semibold text-white">
+                      Pending review more than 1 day since last updated
+                      <span className="text-sm font-normal text-white/50 ml-2">({updatedMoreThan1Day.length})</span>
+                    </h2>
+                    {isUpdatedSectionExpanded ? (
+                      <ChevronUpIcon className="w-5 h-5 text-white/50 shrink-0 ml-2" />
+                    ) : (
+                      <ChevronDownIcon className="w-5 h-5 text-white/50 shrink-0 ml-2" />
+                    )}
+                  </button>
+                  <div className={`transition-all duration-300 ease-in-out ${
+                    isUpdatedSectionExpanded ? 'max-h-[10000px] opacity-100' : 'max-h-0 overflow-hidden opacity-0'
+                  }`}>
+                    {updatedMoreThan1Day.map(review => (
+                      <ReviewItem
+                        key={review.id}
+                        review={review}
+                        isOwner={review.createdBy === user?.email}
+                        userEmail={user?.email || ""}
+                        webhookUrl={room.webhookUrl}
+                        allowedUsers={room.allowedUsers}
+                        isInRoom={room.allowedUsers.some(u => u.email === user?.email) || room.createdBy === user?.email}
+                        showUpdatedTime={true}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              <section>
+                <div className="flex items-center justify-between mb-3 md:mb-4">
+                  <div className="flex gap-6">
+                    <button
+                      onClick={() => setSelectedFilter("all")}
+                      className={`px-4 text-lg md:text-xl font-semibold cursor-pointer text-white hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors ${selectedFilter === "all" ? "bg-white/5" : ""}`}
+                    >
+                      All Active Reviews
+                      <span className="text-sm font-normal text-white/50 ml-2">({reviews.length})</span>
+                    </button>
+                    <button
+                      onClick={() => setSelectedFilter("forYou")}
+                      className={`px-4 text-lg md:text-xl font-semibold cursor-pointer text-white hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors ${selectedFilter === "forYou" ? "bg-white/5" : ""}`}
+                    >
+                      For You
+                      <span className="text-sm font-normal text-white/50 ml-2">({forYouReviews.length})</span>
+                    </button>
+                    <button
+                      onClick={() => setSelectedFilter("createdByYou")}
+                      className={`px-4 text-lg md:text-xl font-semibold cursor-pointer text-white hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors ${selectedFilter === "createdByYou" ? "bg-white/5" : ""}`}
+                    >
+                      Created by You
+                      <span className="text-sm font-normal text-white/50 ml-2">({createdByYouReviews.length})</span>
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setIsAllSectionExpanded(!isAllSectionExpanded)}
+                    className="flex items-center justify-between text-left border-l-4 border-white/20 hover:bg-white/5 rounded-lg p-2 -ml-2 transition-colors"
+                  >
+                    {isAllSectionExpanded ? (
+                      <ChevronUpIcon className="w-5 h-5 text-white/50 shrink-0" />
+                    ) : (
+                      <ChevronDownIcon className="w-5 h-5 text-white/50 shrink-0" />
+                    )}
+                  </button>
+                </div>
+                <div className={`transition-all duration-300 ease-in-out ${
+                  isAllSectionExpanded ? 'max-h-[10000px] opacity-100' : 'max-h-0 overflow-hidden opacity-0'
+                }`}>
+                  {filteredReviews.length === 0 ? (
+                    <p className="text-white/50 italic">No active reviews.</p>
+                  ) : (
+                    filteredReviews.map(review => (
+                      <ReviewItem
+                        key={review.id}
+                        review={review}
+                        isOwner={review.createdBy === user?.email}
+                        userEmail={user?.email || ""}
+                        webhookUrl={room.webhookUrl}
+                        allowedUsers={room.allowedUsers}
+                        isInRoom={room.allowedUsers.some(u => u.email === user?.email) || room.createdBy === user?.email}
+                      />
+                    ))
+                  )}
+                </div>
+              </section>
             </div>
-          </section>
-        </div>
+          </>
+        )}
       </div>
     </main>
   );
