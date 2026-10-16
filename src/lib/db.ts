@@ -351,6 +351,12 @@ export async function updateReviewAssignees(reviewId: string, assignees: { email
   });
 }
 
+// ponytail: no updatedAt bump, a rename shouldn't reset the stale-review timer
+export async function updateReviewTitle(reviewId: string, title: string) {
+  const firestore = checkDb();
+  await updateDoc(doc(firestore, "reviews", reviewId), { title });
+}
+
 export async function removeReviewer(reviewId: string, userEmail: string) {
   const firestore = checkDb();
   const reviewRef = doc(firestore, "reviews", reviewId);
