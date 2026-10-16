@@ -476,6 +476,15 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
     try {
       await updateReviewTitle(review.id, title);
       setEditingTitle(null);
+
+      // ponytail: webhooks can only create messages, so post the rename into the thread instead of editing the original
+      if (webhookUrl) {
+        await sendGoogleChatNotification(
+          webhookUrl,
+          `✏️ *Title Changed:* _${review.title}_ → _${title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n\n📋 View in Review Queue: ${getRoomUrl(review.roomId)}`,
+          review.id
+        );
+      }
     } catch (error) {
       console.error("Error updating title:", error);
       alert("Error updating title: " + (error instanceof Error ? error.message : "Unknown error"));
