@@ -10,8 +10,8 @@ export function cn(...inputs: ClassValue[]) {
  * @param slug - Room slug
  * @returns Full URL to the room
  */
-export function getRoomUrl(slug: string): string {
-  return `https://review-queue.netlify.app/${slug}`;
+export function getRoomUrl(slug: string, reviewId?: string): string {
+  return `https://review-queue.netlify.app/${slug}${reviewId ? `?review=${reviewId}` : ""}`;
 }
 
 /**

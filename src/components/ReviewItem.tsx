@@ -16,12 +16,13 @@ interface ReviewItemProps {
   allowedUsers?: { email: string; googleChatUserId?: string }[];
   isInRoom: boolean; // Whether user is in the room (can delete)
   showUpdatedTime?: boolean; // If true, show time since last update instead of creation
+  defaultActionsExpanded?: boolean; // Open with the action buttons visible (chat link to a single review)
 }
 
-export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUsers = [], isInRoom, showUpdatedTime = false }: ReviewItemProps) {
+export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUsers = [], isInRoom, showUpdatedTime = false, defaultActionsExpanded = false }: ReviewItemProps) {
   const { user, getAccessToken } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isActionsExpanded, setIsActionsExpanded] = useState(false);
+  const [isActionsExpanded, setIsActionsExpanded] = useState(defaultActionsExpanded);
   const [isEditingReviewers, setIsEditingReviewers] = useState(false);
   const [selectedReviewers, setSelectedReviewers] = useState<Set<string>>(new Set());
   const [reviewerSearchFilter, setReviewerSearchFilter] = useState("");
@@ -54,7 +55,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
       // Send notification after status update (same pattern as handleApprove)
       if (webhookUrl) {
         const accessToken = await getAccessToken();
-        const roomUrl = getRoomUrl(review.roomId);
+        const roomUrl = getRoomUrl(review.roomId, review.id);
 
         // Format owner mention
         const ownerMention = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
@@ -90,7 +91,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
       // Send notification
       if (webhookUrl) {
         const accessToken = await getAccessToken();
-        const roomUrl = getRoomUrl(review.roomId);
+        const roomUrl = getRoomUrl(review.roomId, review.id);
 
         // Format owner mention
         const ownerMention = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
@@ -131,7 +132,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
 
       if (webhookUrl) {
         const accessToken = await getAccessToken();
-        const roomUrl = getRoomUrl(review.roomId);
+        const roomUrl = getRoomUrl(review.roomId, review.id);
 
         // Get reviewers info - these are the reviewers who had reviewed before the update
         // (they will be reset to pending after markReviewAsUpdated is called)
@@ -167,7 +168,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
     setIsLoading(prev => ({ ...prev, ping: true }));
     try {
       const accessToken = await getAccessToken();
-      const roomUrl = getRoomUrl(review.roomId);
+      const roomUrl = getRoomUrl(review.roomId, review.id);
 
       // Calculate stuck time information
       const now = new Date();
@@ -239,7 +240,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
       // Notify the review creator
       if (webhookUrl && review.createdBy) {
         const accessToken = await getAccessToken();
-        const roomUrl = getRoomUrl(review.roomId);
+        const roomUrl = getRoomUrl(review.roomId, review.id);
 
         // Calculate updated reviewedBy list
         const updatedReviewedBy = review.reviewedBy?.includes(user.email)
@@ -303,7 +304,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
       // Send notification
       if (webhookUrl) {
         const accessToken = await getAccessToken();
-        const roomUrl = getRoomUrl(review.roomId);
+        const roomUrl = getRoomUrl(review.roomId, review.id);
 
         // Format owner mention
         const ownerMention = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
@@ -342,7 +343,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
       // If marked as done, also send the done notification
       if (allReviewersReviewed && webhookUrl) {
         const accessToken = await getAccessToken();
-        const roomUrl = getRoomUrl(review.roomId);
+        const roomUrl = getRoomUrl(review.roomId, review.id);
         const ownerMention = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
 
         // Get all reviewers who reviewed
@@ -423,7 +424,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
       // Send notification if webhook is configured
       if (webhookUrl) {
         const accessToken = await getAccessToken();
-        const roomUrl = getRoomUrl(review.roomId);
+        const roomUrl = getRoomUrl(review.roomId, review.id);
 
         // Format owner mention
         const ownerMention = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
@@ -481,7 +482,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
       if (webhookUrl) {
         await sendGoogleChatNotification(
           webhookUrl,
-          `✏️ *Title Changed:* _${review.title}_ → _${title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n\n📋 View in Review Queue: ${getRoomUrl(review.roomId)}`,
+          `✏️ *Title Changed:* _${review.title}_ → _${title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n\n📋 View in Review Queue: ${getRoomUrl(review.roomId, review.id)}`,
           review.id
         );
       }

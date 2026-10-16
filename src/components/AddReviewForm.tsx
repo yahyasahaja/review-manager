@@ -48,7 +48,7 @@ export function AddReviewForm({ room, onSuccess }: AddReviewFormProps) {
 
     if (room.webhookUrl) {
       const accessToken = await getAccessToken();
-      const roomUrl = getRoomUrl(room.slug);
+      const roomUrl = getRoomUrl(room.slug, reviewId);
 
       // Build notification with formatting
       let notificationMessage = `🆕 *New Review:* _${title}_\n*ID:* \`${reviewId}\`\n🔗 ${normalizedLink}\n`;
