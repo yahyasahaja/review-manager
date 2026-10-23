@@ -275,17 +275,16 @@ export async function markReviewAsUpdated(reviewId: string) {
 
   const review = reviewSnap.data() as Review;
 
-  // Reset all reviewers back to pending status so they can review again
-  const resetAssignees = review.assignees.map(a => ({
-    ...a,
-    status: "pending" as const
-  }));
+  // Reset reviewers back to pending so they can review again; approvers keep their verdict
+  const approvedBy = review.approvedBy || [];
+  const resetAssignees = review.assignees.map(a =>
+    approvedBy.includes(a.email) ? a : { ...a, status: "pending" as const }
+  );
 
   await updateDoc(reviewRef, {
     assignees: resetAssignees,
-    // Clear past verdicts too, otherwise the review stays hidden from "For You"
-    reviewedBy: [],
-    approvedBy: [],
+    // Clear non-approver "reviewed" marks too, otherwise the review stays hidden from "For You"
+    reviewedBy: (review.reviewedBy || []).filter(email => approvedBy.includes(email)),
     updatedAt: serverTimestamp(),
   });
 }
