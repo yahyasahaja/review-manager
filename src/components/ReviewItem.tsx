@@ -4,7 +4,7 @@ import { GlassCard } from "./ui/GlassCard";
 import { GlassButton } from "./ui/GlassButton";
 import { GlassInput } from "./ui/GlassInput";
 import { useAuth } from "@/context/AuthContext";
-import { CheckCircleIcon, TrashIcon, BellIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, PencilIcon, XMarkIcon, CheckIcon, HandThumbUpIcon, ClipboardDocumentCheckIcon } from "@heroicons/react/24/outline";
+import { CheckCircleIcon, TrashIcon, BellIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, PencilIcon, XMarkIcon, CheckIcon, HandThumbUpIcon, ClipboardDocumentCheckIcon, LinkIcon } from "@heroicons/react/24/outline";
 import { sendGoogleChatNotification, formatMentions } from "@/lib/googleChat";
 import { getRoomUrl, formatRelativeTime, formatTimeSince, formatExactDateTime } from "@/lib/utils";
 
@@ -27,6 +27,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
   const [selectedReviewers, setSelectedReviewers] = useState<Set<string>>(new Set());
   const [reviewerSearchFilter, setReviewerSearchFilter] = useState("");
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [isLoading, setIsLoading] = useState({
     markDone: false,
     markUpdated: false,
@@ -527,6 +528,31 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
     setIsActionsExpanded(prev => !prev);
   };
 
+  // Same ?review=<id> deep link the chat notifications carry
+  const handleCopyLink = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const url = getRoomUrl(review.roomId, review.id);
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // Clipboard API can be unavailable (non-secure context / denied permission)
+      const textarea = document.createElement("textarea");
+      textarea.value = url;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      if (!ok) {
+        alert(`Couldn't copy automatically. Link:\n${url}`);
+        return;
+      }
+    }
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
+  };
+
   return (
     <GlassCard
       // Acknowledged: bg-gradient-to-r is correct Tailwind class, linter suggestion is incorrect
@@ -576,8 +602,18 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
                     )}
                   </div>
                 )}
-                <div className="mt-0.5 text-xs text-white/40 font-mono">
-                  ID: {review.id}
+                <div className="mt-0.5 flex items-center gap-1.5 text-xs text-white/40 font-mono">
+                  <span>ID: {review.id}</span>
+                  <button
+                    onClick={handleCopyLink}
+                    className={`inline-flex items-center gap-0.5 font-sans px-1 rounded transition-colors ${
+                      linkCopied ? 'text-green-300' : 'text-white/40 hover:text-white'
+                    }`}
+                    title="Copy link to this review"
+                  >
+                    {linkCopied ? <CheckIcon className="w-3.5 h-3.5" /> : <LinkIcon className="w-3.5 h-3.5" />}
+                    <span>{linkCopied ? 'Copied' : 'Copy link'}</span>
+                  </button>
                 </div>
               </div>
               {displayTime && (
