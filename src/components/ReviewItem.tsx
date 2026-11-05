@@ -135,17 +135,17 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
         const accessToken = await getAccessToken();
         const roomUrl = getRoomUrl(review.roomId, review.id);
 
-        // Get reviewers info - these are the reviewers who had reviewed before the update
-        // (they will be reset to pending after markReviewAsUpdated is called)
+        // Only reviewers without an approval were reset to pending; approvers keep their verdict
+        const reReviewers = reviewers.filter(r => !review.approvedBy?.includes(r.email));
 
         // Format owner mention
         const ownerMention = await formatMentions([review.createdBy], allowedUsers, webhookUrl, accessToken);
 
         // Format reviewers mentions
         let reviewersMention = '';
-        if (reviewers.length > 0) {
-          const reviewerMentions = await formatMentions(reviewers.map(r => r.email), allowedUsers, webhookUrl, accessToken);
-          reviewersMention = `\n👥 *Reviewers:* ${reviewerMentions} (${reviewers.length} reviewed)`;
+        if (reReviewers.length > 0) {
+          const reviewerMentions = await formatMentions(reReviewers.map(r => r.email), allowedUsers, webhookUrl, accessToken);
+          reviewersMention = `\n👥 *Reviewers:* ${reviewerMentions} (${reReviewers.length} reviewed)`;
         }
 
         let notificationMessage = `🔄 *Review Updated:* _${review.title}_\n*ID:* \`${review.id}\`\n🔗 ${review.link}\n👤 *Owner:* ${ownerMention}${reviewersMention}\n`;
@@ -892,7 +892,7 @@ export function ReviewItem({ review, isOwner, userEmail, webhookUrl, allowedUser
                   className={`action-button flex items-center gap-1.5 md:gap-2 px-3! py-2! md:px-4! md:py-2.5! transition-all duration-300 ${
                     isActionsExpanded ? 'opacity-100 translate-y-0 delay-100' : 'opacity-0 -translate-y-2'
                   }`}
-                  title={`Will notify: ${reviewers.map(r => r.email.split('@')[0]).join(', ')}`}
+                  title={`Will notify: ${reviewers.filter(r => !review.approvedBy?.includes(r.email)).map(r => r.email.split('@')[0]).join(', ')}`}
                 >
                   <ArrowPathIcon className="w-3.5 h-3.5 md:w-4 md:h-4 text-blue-400" />
                   <span className="text-xs md:text-sm">Updated</span>
